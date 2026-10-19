@@ -1,6 +1,10 @@
 # Contrato Angular y PWA
 
-**Estado:** diseño de cliente web previo a implementación. Reglas compartidas en [compartido.md](compartido.md). Al modificar `frontend-web`, aplicar el skill `fashionstore-frontend-continuity` y conservar identidad visual, navegación por roles, responsive y accesibilidad.
+**Estado:** diseño de cliente web previo a implementación. Reglas compartidas en [compartido.md](compartido.md). Al modificar `frontend-web`, conservar la identidad visual existente, navegación y permisos por rol, diseño adaptable, accesibilidad de teclado/lectores, estados de carga/error claros y textos de producto comprensibles. Verificar rutas y flujos en pantalla real antes de dar por terminada una capacidad.
+
+## Ubicación de la implementación
+
+[paquetes-cu.md](paquetes-cu.md) fija la carpeta de entrada de CU26–CU37 bajo `src/app/features/<paquete>/`. Cada nueva vista, servicio y modelo pertenece a ese paquete; `src/app/core/` se reserva para sesión, guardas, interceptores y sincronización reutilizable. CU31–CU32 crean `features/caja_offline/` separado de la caja online existente en `features/ventas_pagos/caja/`. CU34 usa `features/posventa/saldo/` y checkout consume ese servicio sin duplicar reglas. Las URL públicas siguen definidas en `app.routes.ts` y los mensajes HTTP en el contrato compartido, aunque cambie la ubicación interna de archivos.
 
 ## Ámbitos y navegación
 
