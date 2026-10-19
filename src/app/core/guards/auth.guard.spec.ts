@@ -4,8 +4,8 @@ import { HttpRequest, HttpErrorResponse, HttpHandlerFn } from '@angular/common/h
 import { of, throwError } from 'rxjs';
 import { authGuard } from './auth.guard';
 import { authInterceptor } from '../interceptors/auth.interceptor';
-import { AuthService } from '../services/auth.service';
-import { ClientePerfil } from '../models/auth.models';
+import { AuthService } from '../../features/identidad_empresas/services/auth.service';
+import { ClientePerfil } from '../../features/identidad_empresas/models/auth.models';
 
 describe('authGuard y authInterceptor (Seguridad y RBAC)', () => {
   let authServiceSpy: jasmine.SpyObj<AuthService>;

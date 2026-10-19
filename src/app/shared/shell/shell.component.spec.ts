@@ -2,9 +2,9 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { RouterTestingModule } from '@angular/router/testing';
 import { BehaviorSubject } from 'rxjs';
 import { ShellComponent } from './shell.component';
-import { AuthService } from '../../core/services/auth.service';
-import { CarritoService } from '../../core/services/carrito.service';
-import { ClientePerfil } from '../../core/models/auth.models';
+import { AuthService } from '../../features/identidad_empresas/services/auth.service';
+import { CarritoService } from '../../features/ventas_pagos/services/carrito.service';
+import { ClientePerfil } from '../../features/identidad_empresas/models/auth.models';
 
 describe('ShellComponent (Navegación y Acceso por Roles)', () => {
   let component: ShellComponent;

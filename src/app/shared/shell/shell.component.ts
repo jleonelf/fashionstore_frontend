@@ -12,9 +12,9 @@ import { CommonModule } from '@angular/common';
 import { NavigationEnd, RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
 import { filter } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { AuthService } from '../../core/services/auth.service';
-import { CarritoService } from '../../core/services/carrito.service';
-import { ClientePerfil } from '../../core/models/auth.models';
+import { AuthService } from '../../features/identidad_empresas/services/auth.service';
+import { CarritoService } from '../../features/ventas_pagos/services/carrito.service';
+import { ClientePerfil } from '../../features/identidad_empresas/models/auth.models';
 
 @Component({
   selector: 'app-shell',

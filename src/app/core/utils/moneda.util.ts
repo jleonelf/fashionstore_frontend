@@ -1,4 +1,4 @@
-import { DecimalApi } from '../models/ciclo3.models';
+import { DecimalApi } from '../models/comunes.models';
 
 export type { DecimalApi };
 
