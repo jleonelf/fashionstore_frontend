@@ -1,29 +1,20 @@
-# Contrato del segundo parcial — Angular/PWA
+# Contratos FashionStore — Angular/PWA
 
-**Versión propuesta: 0.1.1.** El contrato describe una implementación futura; las rutas nuevas de `interfaz.json` aún no son OpenAPI real. Esta carpeta viaja con el repositorio `frontend-web`, sin depender de rutas de otro clon.
+**Revisión documental 0.2.1 — 25/10/2026; protocolo 0.2.0.** Diseño contractual contrastado por lectura estática; no equivale a funcionalidad implementada ni a OpenAPI exportado.
 
-**Implementación por agente:** dejar cambios locales sin commits, push ni PR hasta que el propietario haga pruebas manuales y dé su OK explícito. Ver [flujo-trabajo.md](flujo-trabajo.md).
+El catálogo compartido contiene 26 CU actuales. Esta primera presentación prioriza CU01, CU02, CU03, CU04, CU13, CU15, CU16 y CU18, distribuidos en bloques A/B en [primera-presentacion.md](primera-presentacion.md). [equivalencias-cu.md](equivalencias-cu.md) conserva la numeración anterior y [alineacion-codigo.md](alineacion-codigo.md) separa evidencia del código de comportamiento requerido. Las funciones anteriores restantes se conservan en [funciones-conservadas.md](funciones-conservadas.md).
 
-## Contenido
+## Guía de esta copia
 
-- [reglas-aprobadas.md](reglas-aprobadas.md): acuerdos C01–C30, notificaciones y criterios técnicos completos para este repositorio.
-- [casos-de-uso.md](casos-de-uso.md): las 37 fichas CU01–CU37 con actores, flujos y alternativas.
-- [guia-revision-manual.md](guia-revision-manual.md): pasos para comprobar por cuenta propia el alcance, los mensajes y la trazabilidad.
-- [interfaz.json](interfaz.json): copia fijada del contrato de mensajes y rutas cuyo origen está en `backend`.
-- [operacion.schema.json](operacion.schema.json) y [resultado.schema.json](resultado.schema.json): esquemas de la cola y los resultados.
-- [compartido.md](compartido.md): reglas compartidas de sincronización y pagos.
-- [angular-pwa.md](angular-pwa.md): navegación, persistencia y estados visibles del cliente PWA y la caja web.
-- [integracion.md](integracion.md): flujos y contratos funcionales entre canales.
-- [payloads.md](payloads.md): solicitudes/respuestas ilustrativas para consumidores y dobles de prueba.
-- [trazabilidad-cu.md](trazabilidad-cu.md): cambios en CU existentes y nuevas capacidades por componente.
-- [paquetes-cu.md](paquetes-cu.md): mapa de paquetes y casos de uso compartido con backend y Flutter.
-- [flujo-trabajo.md](flujo-trabajo.md): secuencia de entregas, PRs y condiciones de integración.
-- [version.json](version.json): versión y SHA-256 de los tres JSON para comprobar que coinciden con backend y Flutter.
+- [casos-de-uso.md](casos-de-uso.md), [reglas-aprobadas.md](reglas-aprobadas.md), [trazabilidad-cu.md](trazabilidad-cu.md) y [paquetes-cu.md](paquetes-cu.md): alcance, reglas y mapa de paquetes.
+- [interfaz.json](interfaz.json), [operacion.schema.json](operacion.schema.json), [resultado.schema.json](resultado.schema.json), [compartido.md](compartido.md), [integracion.md](integracion.md) y [payloads.md](payloads.md): contratos propuestos, no rutas nuevas ya verificadas en ejecución.
+- [angular-pwa.md](angular-pwa.md): navegación y almacenamiento web, instalación PWA y caja web futura.
+- [flujo-trabajo.md](flujo-trabajo.md), [guia-revision-manual.md](guia-revision-manual.md), [CAMBIOS-0.2.1.md](CAMBIOS-0.2.1.md), [CAMBIOS-0.2.0.md](CAMBIOS-0.2.0.md) y [version.json](version.json): coordinación, revisión, historial y huellas.
 
-Angular implementa administración **online**, cliente PWA parcial y la única caja web offline. El desarrollo puede realizarse en un PR independiente; citar versión del contrato y PR de backend asociado. Los servicios HTTP deben poder trabajar con respuestas simuladas basadas en `interfaz.json` hasta disponer del OpenAPI exportado. Al integrar, comprobar la forma real de los mensajes y ejecutar los escenarios de `angular-pwa.md`. No declarar implementado un flujo cuyo endpoint siga siendo solo diseño.
+El código Angular actual agrupa funciones en `src/app/features/<paquete>/`; las rutas públicas se registran en `src/app/app.routes.ts` y la infraestructura común en `src/app/core/`. La caja existente bajo `ventas_pagos/caja` es online. La PWA, IndexedDB y la caja offline de CU06/CU07 son exigencias de diseño pendientes; Flutter también participa en esa caja posterior mediante SQLite.
 
-El código actual está organizado físicamente por paquete en `src/app/features/<paquete>/`: cada paquete contiene sus pantallas, servicios y modelos. [paquetes-cu.md](paquetes-cu.md) muestra la correspondencia CU–paquete–carpeta. La caja actual dentro de `ventas_pagos/caja` cubre CU11 online; `caja_offline` de CU31–CU32 continúa prevista.
+El enlace público `/tienda/{empresa_codigo}` es navegación propuesta para catálogo empresarial, no ruta ya implementada ni permiso. Ciudades son globales y las empresas administran solo sucursales/tarifas propias. La ventana privada local de 8 h desde login online es independiente del JWT actual de 24 h; los detalles web están en [angular-pwa.md](angular-pwa.md).
 
-Si cambia el contrato común, primero se acuerda en backend, luego se actualizan las tres copias con la misma versión y hash. Un cambio incompatible exige migrar pendientes IndexedDB por `version_esquema`. Nunca se modifica una copia local para resolver una discrepancia sin propagar el cambio a los otros repositorios. Métodos y funciones nuevos en español, `camelCase`, salvo firmas obligatorias del framework o SDK.
+El backend es origen editorial de los archivos compartidos enumerados en `version.json`. Se copian idénticos a los tres repositorios y se cotejan sus SHA-256. Los archivos específicos de Angular, en especial este README y `angular-pwa.md`, se conservan. Una modificación de protocolo debe contemplar la migración de pendientes IndexedDB por `version_esquema`; renumerar CU no cambia rutas ni IDs existentes.
 
-Las fichas, reglas, trazabilidad, ejemplos, esquemas y guía de revisión residen en este repositorio. Los otros repositorios solo se necesitan para integrar sus implementaciones, no para conocer este contrato.
+Para trabajo de implementación rige la puerta del propietario descrita en [flujo-trabajo.md](flujo-trabajo.md). Esta revisión solo modifica documentación local. Los nombres nuevos TypeScript se proponen en español `camelCase`, salvo firmas obligatorias del framework.
