@@ -7,6 +7,28 @@
     </div>
   </div>
 
+  <!-- BANNER DE CAPACIDADES Y PLAN VIGENTE (CU02 / CU15) -->
+  <div class="card-panel plan-banner" *ngIf="miPlan">
+    <div class="plan-info-grid">
+      <div>
+        <span class="plan-label">Plan contratado:</span>
+        <strong>{{ miPlan.plan_nombre }} ({{ miPlan.plan_codigo }})</strong>
+      </div>
+      <div>
+        <span class="plan-label">Sucursales activas:</span>
+        <strong [class.text-danger]="miPlan.sucursales_activas >= miPlan.limite_sucursales">
+          {{ miPlan.sucursales_activas }} de {{ miPlan.limite_sucursales }} permitidas
+        </strong>
+      </div>
+      <div>
+        <span class="plan-label">Estado de cobertura:</span>
+        <span class="badge-estado" [ngClass]="miPlan.estado_efectivo.toLowerCase()">
+          {{ miPlan.estado_efectivo }}
+        </span>
+      </div>
+    </div>
+  </div>
+
   <div *ngIf="mensajeError" class="alert-box alert-danger" role="alert">
     {{ mensajeError }}
   </div>
@@ -18,9 +40,10 @@
   <div class="module-grid">
     <!-- COLUMNA FORMULARIOS -->
     <div class="forms-col">
-      <!-- FORM CREAR CIUDAD -->
-      <div class="card-panel">
-        <h3>Registrar Ciudad</h3>
+      <!-- FORM CREAR CIUDAD (SOLO PLATAFORMA CU15) -->
+      <div class="card-panel" *ngIf="esPlataforma">
+        <h3>Registrar Ciudad (Global)</h3>
+        <p class="text-muted">Catálogo central administrado exclusivamente por la plataforma.</p>
         <form (ngSubmit)="crearCiudad()">
           <div class="form-group">
             <label for="ciudadNom">Nombre de la Ciudad *</label>
@@ -127,10 +150,20 @@
             </div>
           </div>
 
-          <button type="submit" class="btn-primary" [disabled]="guardandoSucursal">
+          <button
+            type="submit"
+            class="btn-primary"
+            [disabled]="guardandoSucursal || (miPlan && miPlan.sucursales_activas >= miPlan.limite_sucursales)"
+          >
             <span *ngIf="!guardandoSucursal">Guardar Sucursal</span>
             <span *ngIf="guardandoSucursal">Registrando...</span>
           </button>
+          <p
+            *ngIf="miPlan && miPlan.sucursales_activas >= miPlan.limite_sucursales"
+            class="text-danger small-note"
+          >
+            Límite de sucursales activas alcanzado para su plan. Desactive una existente o mejore su plan.
+          </p>
         </form>
       </div>
     </div>
@@ -155,15 +188,16 @@
               <th>Ciudad</th>
               <th>Ubicación</th>
               <th>Tarifas Delivery</th>
+              <th>Estado</th>
               <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
             <tr *ngIf="cargando">
-              <td colspan="5" class="table-empty">Cargando sucursales...</td>
+              <td colspan="6" class="table-empty">Cargando sucursales...</td>
             </tr>
             <tr *ngIf="!cargando && sucursales.length === 0">
-              <td colspan="5" class="table-empty">No se encontraron sucursales registradas</td>
+              <td colspan="6" class="table-empty">No se encontraron sucursales registradas</td>
             </tr>
             <tr *ngFor="let s of sucursales">
               <td>
@@ -180,7 +214,20 @@
                 <div class="tarifa-sub">+Bs. {{ s.incremento_anillo_delivery }}/anillo</div>
               </td>
               <td>
+                <span class="badge-estado" [class.activa]="s.activa" [class.inactiva]="!s.activa">
+                  {{ s.activa ? 'Activa' : 'Inactiva' }}
+                </span>
+              </td>
+              <td class="actions-cell">
                 <button type="button" class="btn-action" (click)="ajustarTarifas(s, $event)">Ajustar tarifas</button>
+                <button
+                  type="button"
+                  class="btn-action"
+                  [disabled]="cambiandoEstadoId === s.id"
+                  (click)="alternarEstadoSucursal(s)"
+                >
+                  {{ s.activa ? 'Desactivar' : 'Activar' }}
+                </button>
               </td>
             </tr>
           </tbody>

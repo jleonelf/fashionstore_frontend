@@ -8,6 +8,7 @@
 .tabs button{padding:.55rem 1.1rem;border-radius:9999px;border:1px solid var(--border);background:#fff;font-weight:700;font-size:.85rem;cursor:pointer;transition:.2s}
 .tabs button.active{background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(79,70,229,.25)}
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;align-items:start}
+.grid-2 > *{min-width:0}
 .card.glass{background:var(--card-bg);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-card);padding:1.6rem;backdrop-filter:blur(8px)}
 .card h3{font-family:'Space Grotesk',sans-serif;font-size:1.15rem;font-weight:700;margin:0 0 .3rem;color:var(--text-main)}
 .card-desc{color:var(--text-muted);font-size:.85rem;margin-bottom:1.2rem;line-height:1.5}
@@ -29,7 +30,7 @@
 .btn-primary:hover{transform:translateY(-1px)}
 .btn-primary:disabled{opacity:.6}
 .hint{font-size:.75rem;color:var(--text-muted);margin-top:.6rem;text-align:center}
-.table-wrap{overflow-x:auto}
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;min-width:0;width:100%}
 table{width:100%;border-collapse:collapse;font-size:.85rem}
 th{background:#f8fafc;color:var(--text-muted);font-size:.72rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:.7rem .8rem;text-align:left;border-bottom:1px solid var(--border)}
 td{padding:.75rem .8rem;border-bottom:1px solid #f1f5f9}

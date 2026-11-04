@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed, fakeAsync, tick, flush } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { of } from 'rxjs';
 import { CatalogoComponent } from './catalogo.component';
 import { CatalogoService } from '../services/catalogo.service';
@@ -48,7 +49,14 @@ describe('CatalogoComponent (Roles, Asistente IA y Accesibilidad de Modal)', () 
     ]);
     productoServiceSpy = jasmine.createSpyObj<ProductoService>('ProductoService', ['gestionarVariantes', 'obtenerProducto']);
     carritoServiceSpy = jasmine.createSpyObj<CarritoService>('CarritoService', ['agregarLinea']);
-    authServiceSpy = jasmine.createSpyObj<AuthService>('AuthService', ['obtenerUsuarioActual', 'estaAutenticado']);
+    authServiceSpy = jasmine.createSpyObj<AuthService>('AuthService', [
+      'obtenerUsuarioActual',
+      'estaAutenticado',
+      'obtenerEmpresaId',
+      'obtenerEmpresaCodigo'
+    ]);
+    authServiceSpy.obtenerEmpresaId.and.returnValue('00000000-0000-4000-8000-000000000001');
+    authServiceSpy.obtenerEmpresaCodigo.and.returnValue('fashionstore');
     iaServiceSpy = jasmine.createSpyObj<IAService>('IAService', ['buscar', 'recomendaciones']);
 
     catalogoServiceSpy.consultarCatalogo.and.returnValue(of(mockProductos));
@@ -62,7 +70,7 @@ describe('CatalogoComponent (Roles, Asistente IA y Accesibilidad de Modal)', () 
     iaServiceSpy.recomendaciones.and.returnValue(of({ items: [], total: 0, proveedor: 'gemini' }));
 
     await TestBed.configureTestingModule({
-      imports: [CatalogoComponent],
+      imports: [CatalogoComponent, HttpClientTestingModule],
       providers: [
         provideRouter([]),
         { provide: CatalogoService, useValue: catalogoServiceSpy },

@@ -133,7 +133,14 @@ export class ShellComponent implements OnInit {
   }
 
   esAdmin(): boolean {
-    return this.usuarioActual?.rol === 'ADMINISTRADOR';
+    return ['ADMINISTRADOR', 'SUPERADMIN', 'ADMINISTRADOR_PLATAFORMA', 'ADMINISTRADOR_SISTEMA'].includes(this.usuarioActual?.rol || '');
+  }
+
+  puedeVerEmpresas(): boolean {
+    const rol = this.usuarioActual?.rol || '';
+    const esAdminPlat = ['SUPERADMIN', 'ADMINISTRADOR_PLATAFORMA', 'ADMINISTRADOR_SISTEMA'].includes(rol);
+    const esAdminSinEmpresa = rol === 'ADMINISTRADOR' && !this.usuarioActual?.empresa_id;
+    return esAdminPlat || esAdminSinEmpresa;
   }
 
   esEncargado(): boolean {

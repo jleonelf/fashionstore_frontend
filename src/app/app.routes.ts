@@ -103,6 +103,13 @@ export const routes: Routes = [
     title: 'Inteligencia — FashionStore'
   },
   {
+    path: 'empresas',
+    loadComponent: () => import('./features/identidad_empresas/empresas/empresas.component').then(m => m.EmpresasComponent),
+    canActivate: [authGuard],
+    data: { roles: ['SUPERADMIN', 'ADMINISTRADOR_PLATAFORMA', 'ADMINISTRADOR_SISTEMA'] },
+    title: 'Empresas — FashionStore'
+  },
+  {
     path: 'usuarios',
     loadComponent: () => import('./features/identidad_empresas/usuarios/usuarios.component').then(m => m.UsuariosComponent),
     canActivate: [authGuard],

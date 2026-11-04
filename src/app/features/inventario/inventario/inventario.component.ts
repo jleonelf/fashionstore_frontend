@@ -176,11 +176,60 @@ export class InventarioComponent implements OnInit {
     return this.existenciaTotalManual;
   }
 
+  get totalFisico(): number {
+    return this.existencias.reduce((s, e) => s + (e.fisico ?? e.existencia_total ?? 0), 0);
+  }
+
+  get totalLibre(): number {
+    return this.existencias.reduce((s, e) => s + (e.libre ?? e.disponible ?? 0), 0);
+  }
+
+  get totalReservado(): number {
+    return this.existencias.reduce((s, e) => s + (e.reservado ?? 0), 0);
+  }
+
+  get totalCupoOffline(): number {
+    return this.existencias.reduce((s, e) => s + (e.cupo_offline ?? e.comprometido_caja ?? 0), 0);
+  }
+
   tipoClass(t: string): string {
     if (t === 'RECEPCION_PROVEEDOR') return 't-rec';
     if (t.startsWith('VENTA')) return 't-venta';
     if (t.includes('TRASLADO')) return 't-tras';
     if (t === 'MERMA') return 't-merma';
     return 't-def';
+  }
+
+  etiquetaTipoKardex(tipo: string): string {
+    const mapa: Record<string, string> = {
+      RECEPCION_PROVEEDOR: 'Recepción de proveedor',
+      RESERVA: 'Reserva',
+      LIBERACION_RESERVA: 'Liberación de reserva',
+      COMPROMISO_TRASLADO: 'Compromiso de traslado',
+      DESPACHO_TRASLADO: 'Despacho de traslado',
+      RECEPCION_TRASLADO: 'Recepción de traslado',
+      VENTA_PRESENCIAL: 'Venta presencial',
+      VENTA_DIGITAL: 'Venta online',
+      DEVOLUCION: 'Devolución',
+      MERMA: 'Merma',
+      AJUSTE: 'Ajuste de inventario'
+    };
+    return mapa[tipo] || tipo;
+  }
+
+  formatearReferencia(ref?: string): string {
+    if (!ref) return '—';
+    const mapa: Record<string, string> = {
+      RECEPCION_PROVEEDOR: 'Lote de proveedor',
+      RESERVA: 'Reserva de cliente',
+      TRASLADO: 'Traslado de sucursal',
+      VENTA: 'Venta en tienda',
+      VENTA_DIGITAL: 'Venta online',
+      VENTA_PRESENCIAL: 'Venta en tienda',
+      DEVOLUCION: 'Devolución de prenda',
+      MERMA: 'Merma de inventario',
+      AJUSTE: 'Ajuste de stock'
+    };
+    return mapa[ref] || ref;
   }
 }

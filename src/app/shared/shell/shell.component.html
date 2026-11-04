@@ -101,6 +101,7 @@
           Gestión <span class="chevron" aria-hidden="true">▾</span>
         </button>
         <div class="nav-dropdown-menu" [class.open]="dropdownActivo === 'admin-adm'">
+          <a routerLink="/empresas" routerLinkActive="active" *ngIf="puedeVerEmpresas()" (click)="cerrarDropdowns()" class="dropdown-item">Empresas</a>
           <a routerLink="/sucursales" routerLinkActive="active" (click)="cerrarDropdowns()" class="dropdown-item">Sucursales</a>
           <a routerLink="/usuarios" routerLinkActive="active" (click)="cerrarDropdowns()" class="dropdown-item">Usuarios y roles</a>
           <a routerLink="/inteligencia" routerLinkActive="active" (click)="cerrarDropdowns()" class="dropdown-item">Inteligencia</a>
@@ -228,6 +229,9 @@
       <div class="drawer-section-title">Gestión y reportes</div>
       <a routerLink="/dashboard" routerLinkActive="active" (click)="cerrarMenu()" class="drawer-link">
         <span>Dashboard de métricas</span>
+      </a>
+      <a routerLink="/empresas" routerLinkActive="active" *ngIf="puedeVerEmpresas()" (click)="cerrarMenu()" class="drawer-link">
+        <span>Empresas contratantes</span>
       </a>
       <a routerLink="/sucursales" routerLinkActive="active" *ngIf="puedeVerSucursales()" (click)="cerrarMenu()" class="drawer-link">
         <span>Sucursales</span>

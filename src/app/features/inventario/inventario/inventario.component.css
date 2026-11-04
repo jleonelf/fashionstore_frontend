@@ -22,7 +22,7 @@
 .tabs button.on{background:#0f172a;color:#fff;border-color:#0f172a}
 .card h3{font-family:'Space Grotesk',sans-serif;font-size:1.15rem;font-weight:700;margin:0 0 .2rem}
 .desc{color:var(--text-muted);font-size:.82rem;margin-bottom:.9rem}
-.table-wrap{overflow:auto}
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;min-width:0;width:100%}
 table{width:100%;border-collapse:collapse;font-size:.84rem}
 th{background:#f8f6f3;color:#64748b;font-size:.7rem;letter-spacing:.05em;text-transform:uppercase;padding:.6rem;text-align:left;border-bottom:1px solid #e2e8f0}
 td{padding:.6rem;border-bottom:1px solid #f1f5f9}

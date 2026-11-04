@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import {
   UsuarioCrearDTO,
+  UsuarioActualizarDTO,
   UsuarioListadoDTO,
   AsignarRolDTO,
   ActualizarEstadoDTO,
@@ -33,6 +34,13 @@ export class UsuarioService {
    */
   crearUsuario(datos: UsuarioCrearDTO): Observable<UsuarioListadoDTO> {
     return this.http.post<UsuarioListadoDTO>(`${this.apiUrl}/usuarios`, datos);
+  }
+
+  /**
+   * Actualizar datos del usuario de la empresa
+   */
+  actualizarUsuario(usuarioId: string, datos: UsuarioActualizarDTO): Observable<UsuarioListadoDTO> {
+    return this.http.patch<UsuarioListadoDTO>(`${this.apiUrl}/usuarios/${usuarioId}`, datos);
   }
 
   /**

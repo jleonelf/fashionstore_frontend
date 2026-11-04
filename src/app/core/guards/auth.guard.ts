@@ -10,6 +10,14 @@ export const authGuard: CanActivateFn = (route, state) => {
     return router.createUrlTree(['/auth/login'], { queryParams: { redirectUrl: state.url } });
   }
 
+  // Validar ventana de privacidad de 8 horas
+  if (!authService.esVentanaPrivacidadValida()) {
+    authService.cerrarSesion();
+    return router.createUrlTree(['/auth/login'], {
+      queryParams: { redirectUrl: state.url, expirado: '1' }
+    });
+  }
+
   // Si la ruta define roles permitidos en data: { roles: ['ADMINISTRADOR', ...] }
   const rolesPermitidos = route.data?.['roles'] as Array<string> | undefined;
   if (rolesPermitidos && rolesPermitidos.length > 0) {

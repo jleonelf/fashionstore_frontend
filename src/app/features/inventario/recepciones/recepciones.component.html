@@ -2,34 +2,34 @@
   <div class="hero-header">
     <div class="hero-badge">Abastecimiento e inventario</div>
     <h1>Recepción de Lotes & Proveedores</h1>
-    <p class="hero-sub">Costo promedio ponderado por variante global — <code>(previa × promedio + recibida × costo) / (previa + recibida)</code> — Kardex <b>RECEPCION_PROVEEDOR</b> en transacción única</p>
+    <p class="hero-sub">Registro de lotes de abastecimiento con cálculo de costo promedio ponderado y actualización automática de stock e inventario.</p>
   </div>
 
-  <div *ngIf="mensajeExito" class="alert-box alert-success">{{ mensajeExito }}</div>
-  <div *ngIf="mensajeError" class="alert-box alert-danger">{{ mensajeError }}</div>
+  <div *ngIf="mensajeExito" class="alert-box alert-success" role="status">{{ mensajeExito }}</div>
+  <div *ngIf="mensajeError" class="alert-box alert-danger" role="alert">{{ mensajeError }}</div>
 
-  <div class="tabs">
-    <button [class.active]="tab==='lotes'" (click)="tab='lotes'">📦 Registrar Lote</button>
-    <button [class.active]="tab==='proveedores'" (click)="tab='proveedores'">🏢 Proveedores</button>
+  <div class="tabs" role="tablist" aria-label="Pestañas de abastecimiento">
+    <button type="button" role="tab" [attr.aria-selected]="tab==='lotes'" [class.active]="tab==='lotes'" (click)="tab='lotes'">📦 Registrar Lote</button>
+    <button type="button" role="tab" [attr.aria-selected]="tab==='proveedores'" [class.active]="tab==='proveedores'" (click)="tab='proveedores'">🏢 Proveedores</button>
   </div>
 
   <!-- LOTE -->
-  <div *ngIf="tab==='lotes'" class="grid-2">
+  <div *ngIf="tab==='lotes'" class="grid-2" role="tabpanel" aria-label="Registro de lotes">
     <div class="card glass">
       <h3>Registrar Lote de Recepción</h3>
-      <p class="card-desc">Ingresa mercadería a una sucursal: incrementa <b>disponible</b>, recalcula <b>costo_promedio / costo_ultimo</b> por variante y genera movimiento Kardex.</p>
+      <p class="card-desc">Ingreso de mercadería a sucursal: incrementa el stock disponible, actualiza los costos de referencia por variante y genera el movimiento de auditoría correspondiente.</p>
 
       <div class="form-group">
-        <label>Proveedor *</label>
-        <select [(ngModel)]="loteForm.proveedor_id">
+        <label for="lote-proveedor">Proveedor *</label>
+        <select id="lote-proveedor" [(ngModel)]="loteForm.proveedor_id">
           <option value="">— Seleccione —</option>
           <option *ngFor="let p of proveedores" [value]="p.id">{{ p.razon_social }} {{ p.nit ? '('+p.nit+')' : '' }}</option>
         </select>
       </div>
 
       <div class="form-group">
-        <label>Sucursal destino *</label>
-        <select [(ngModel)]="loteForm.sucursal_id">
+        <label for="lote-sucursal">Sucursal destino *</label>
+        <select id="lote-sucursal" [(ngModel)]="loteForm.sucursal_id">
           <option value="">— Seleccione —</option>
           <option *ngFor="let s of sucursales" [value]="s.id">{{ sucursalLabel(s) }}</option>
         </select>
@@ -37,14 +37,14 @@
 
       <div class="row">
         <div class="form-group flex1">
-          <label>N° Documento / Factura</label>
-          <input [(ngModel)]="loteForm.numero_documento" placeholder="FAC-00123" />
+          <label for="lote-doc">N° Documento / Factura</label>
+          <input id="lote-doc" [(ngModel)]="loteForm.numero_documento" placeholder="FAC-00123" />
         </div>
       </div>
 
       <div class="form-group">
-        <label>Observación</label>
-        <input [(ngModel)]="loteForm.observacion" placeholder="Ej. Lote temporada Primavera-Verano" />
+        <label for="lote-obs">Observación</label>
+        <input id="lote-obs" [(ngModel)]="loteForm.observacion" placeholder="Ej. Lote temporada Primavera-Verano" />
       </div>
 
       <div class="detalle-box">
@@ -54,27 +54,35 @@
         </div>
 
         <div *ngFor="let d of loteForm.detalles; let i = index" class="detalle-row">
-          <select [(ngModel)]="d.variante_id" class="sel-variante">
-            <option value="">— variante —</option>
+          <select [(ngModel)]="d.variante_id" class="sel-variante" aria-label="Variante de prenda">
+            <option value="">— Variante —</option>
             <option *ngFor="let v of variantes" [value]="v.id">{{ varianteLabel(v) }}</option>
           </select>
-          <input type="number" [(ngModel)]="d.cantidad" min="1" placeholder="Cant." class="inp-cant" />
-          <input type="number" [(ngModel)]="d.costo_unitario" min="0" step="0.01" placeholder="Costo Bs." class="inp-costo" />
-          <button type="button" class="btn-icon" (click)="quitarDetalle(i)" *ngIf="loteForm.detalles.length > 1">✕</button>
+          <input type="number" [(ngModel)]="d.cantidad" min="1" placeholder="Cant." class="inp-cant" aria-label="Cantidad recibida" />
+          <input type="number" [(ngModel)]="d.costo_unitario" min="0" step="0.01" placeholder="Costo Bs." class="inp-costo" aria-label="Costo unitario en Bolivianos" />
+          <button type="button" class="btn-icon" (click)="quitarDetalle(i)" *ngIf="loteForm.detalles.length > 1" aria-label="Quitar variante">✕</button>
         </div>
       </div>
 
       <button type="button" class="btn-primary" (click)="registrarLote()" [disabled]="guardandoLote">
-        {{ guardandoLote ? 'Procesando...' : 'Registrar Lote → disponible + y Kardex' }}
+        {{ guardandoLote ? 'Guardando recepción...' : 'Registrar recepción de mercadería' }}
       </button>
-      <p class="hint">Transacción única: Lote + Detalles + update variante (costos) + inventario_sucursal + movimientos_inventario</p>
+      <p class="hint">Operación atómica: se actualizan el lote, las cantidades en inventario y los movimientos de auditoría simultáneamente.</p>
     </div>
 
     <div class="card glass">
       <h3>Últimos Lotes</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Fecha</th><th>Proveedor</th><th>Sucursal</th><th>Doc</th><th>Items</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Fecha y hora</th>
+              <th>Proveedor</th>
+              <th>Sucursal</th>
+              <th>Doc</th>
+              <th>Items</th>
+            </tr>
+          </thead>
           <tbody>
             <tr *ngFor="let l of lotes.slice(0, 8)">
               <td class="mono">{{ l.fecha_recepcion | date:'short' }}</td>
@@ -83,7 +91,9 @@
               <td>{{ l.numero_documento || '—' }}</td>
               <td><span class="pill">{{ l.detalles.length }} var.</span></td>
             </tr>
-            <tr *ngIf="lotes.length === 0"><td colspan="5" class="empty">Sin lotes — registra el primero</td></tr>
+            <tr *ngIf="lotes.length === 0">
+              <td colspan="5" class="empty">No hay lotes de recepción registrados actualmente.</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -94,19 +104,19 @@
   </div>
 
   <!-- PROVEEDORES -->
-  <div *ngIf="tab==='proveedores'" class="grid-2">
+  <div *ngIf="tab==='proveedores'" class="grid-2" role="tabpanel" aria-label="Gestión de proveedores">
     <div class="card glass">
       <h3>Nuevo Proveedor</h3>
-      <div class="form-group"><label>Razón social *</label><input [(ngModel)]="nuevoProveedor.razon_social" placeholder="Textil Andina S.A." /></div>
+      <div class="form-group"><label for="prov-razon">Razón social *</label><input id="prov-razon" [(ngModel)]="nuevoProveedor.razon_social" placeholder="Textil Andina S.A." /></div>
       <div class="row">
-        <div class="form-group flex1"><label>NIT</label><input [(ngModel)]="nuevoProveedor.nit" placeholder="123456789" /></div>
-        <div class="form-group flex1"><label>Contacto</label><input [(ngModel)]="nuevoProveedor.contacto" placeholder="Juan Pérez" /></div>
+        <div class="form-group flex1"><label for="prov-nit">NIT</label><input id="prov-nit" [(ngModel)]="nuevoProveedor.nit" placeholder="123456789" /></div>
+        <div class="form-group flex1"><label for="prov-contacto">Contacto</label><input id="prov-contacto" [(ngModel)]="nuevoProveedor.contacto" placeholder="Juan Pérez" /></div>
       </div>
       <div class="row">
-        <div class="form-group flex1"><label>Teléfono</label><input [(ngModel)]="nuevoProveedor.telefono" placeholder="77654321" /></div>
-        <div class="form-group flex1"><label>Correo</label><input [(ngModel)]="nuevoProveedor.correo_electronico" placeholder="contacto@proveedor.bo" /></div>
+        <div class="form-group flex1"><label for="prov-tel">Teléfono</label><input id="prov-tel" [(ngModel)]="nuevoProveedor.telefono" placeholder="77654321" /></div>
+        <div class="form-group flex1"><label for="prov-correo">Correo electrónico</label><input id="prov-correo" [(ngModel)]="nuevoProveedor.correo_electronico" placeholder="contacto@proveedor.bo" /></div>
       </div>
-      <div class="form-group"><label>Dirección</label><input [(ngModel)]="nuevoProveedor.direccion" /></div>
+      <div class="form-group"><label for="prov-dir">Dirección</label><input id="prov-dir" [(ngModel)]="nuevoProveedor.direccion" /></div>
       <button type="button" class="btn-primary" (click)="crearProveedor()" [disabled]="guardandoProv">{{ guardandoProv ? 'Guardando…' : 'Crear Proveedor' }}</button>
     </div>
 
@@ -114,7 +124,14 @@
       <h3>Proveedores Registrados</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Razón Social</th><th>NIT</th><th>Contacto</th><th>Estado</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Razón Social</th>
+              <th>NIT</th>
+              <th>Contacto</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
           <tbody>
             <tr *ngFor="let p of proveedores">
               <td class="strong">{{ p.razon_social }}</td>
@@ -122,7 +139,9 @@
               <td>{{ p.contacto || '—' }}</td>
               <td><span class="badge" [class.ok]="p.activo" [class.off]="!p.activo">{{ p.activo ? 'Activo' : 'Inactivo' }}</span></td>
             </tr>
-            <tr *ngIf="proveedores.length===0"><td colspan="4" class="empty">Sin proveedores</td></tr>
+            <tr *ngIf="proveedores.length===0">
+              <td colspan="4" class="empty">No hay proveedores registrados.</td>
+            </tr>
           </tbody>
         </table>
       </div>

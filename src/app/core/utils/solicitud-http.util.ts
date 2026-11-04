@@ -1,7 +1,7 @@
 import { HttpHeaders, HttpParams } from '@angular/common/http';
 
-export function cabeceraIdempotencia(): HttpHeaders {
-  return new HttpHeaders({ 'Idempotency-Key': crypto.randomUUID() });
+export function cabeceraIdempotencia(clave?: string): HttpHeaders {
+  return new HttpHeaders({ 'Idempotency-Key': clave || crypto.randomUUID() });
 }
 
 export function parametrosHttp(valores: Record<string, unknown>): HttpParams {

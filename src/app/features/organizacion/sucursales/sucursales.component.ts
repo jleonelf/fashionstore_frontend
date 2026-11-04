@@ -2,7 +2,8 @@ import { Component, OnInit, OnDestroy, ViewChild, ElementRef, HostListener } fro
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { OrganizacionService } from '../services/organizacion.service';
-import { CiudadDTO, SucursalDTO, SucursalCrearDTO } from '../models/organizacion.models';
+import { AuthService } from '../../identidad_empresas/services/auth.service';
+import { CiudadDTO, SucursalDTO, SucursalCrearDTO, SuscripcionRespuestaDTO } from '../models/organizacion.models';
 import { formatearErrorApi } from '../../../core/utils/error-handler.util';
 import {
   bloquearScrollBody,
@@ -22,6 +23,8 @@ import {
 export class SucursalesComponent implements OnInit, OnDestroy {
   ciudades: CiudadDTO[] = [];
   sucursales: SucursalDTO[] = [];
+  miPlan: SuscripcionRespuestaDTO | null = null;
+  esPlataforma = false;
 
   filtroCiudadId = '';
   nuevaCiudadNombre = '';
@@ -42,6 +45,7 @@ export class SucursalesComponent implements OnInit, OnDestroy {
   cargando = false;
   guardandoCiudad = false;
   guardandoSucursal = false;
+  cambiandoEstadoId: string | null = null;
   mensajeError: string | null = null;
   mensajeExito: string | null = null;
   sucursalTarifas: SucursalDTO | null = null;
@@ -51,17 +55,35 @@ export class SucursalesComponent implements OnInit, OnDestroy {
   @ViewChild('modalTarifasBox') modalTarifasBox?: ElementRef<HTMLElement>;
   private disparadorPrevio: HTMLElement | null = null;
 
-  constructor(private orgService: OrganizacionService) {}
+  constructor(
+    private orgService: OrganizacionService,
+    private authService: AuthService,
+  ) {}
 
   ngOnInit(): void {
+    const u = this.authService.obtenerUsuarioActual();
+    const rol = (typeof u?.rol === 'string' ? u.rol : (u?.rol as any)?.nombre) || '';
+    this.esPlataforma = !u?.empresa_id && ['SUPERADMIN', 'ADMINISTRADOR_SISTEMA', 'ADMINISTRADOR_PLATAFORMA'].includes(rol);
+
     this.cargarCiudades();
     this.cargarSucursales();
+    this.cargarCapacidadesPlan();
   }
 
   cargarCiudades(): void {
     this.orgService.gestionarCiudades().subscribe({
       next: (data) => (this.ciudades = data),
       error: (err) => (this.mensajeError = formatearErrorApi(err, 'Error al cargar lista de ciudades.'))
+    });
+  }
+
+  cargarCapacidadesPlan(): void {
+    this.orgService.consultarMiPlan().subscribe({
+      next: (plan) => (this.miPlan = plan),
+      error: () => {
+        // En usuarios de plataforma sin empresa_id o invitados puede no aplicar
+        this.miPlan = null;
+      }
     });
   }
 
@@ -80,6 +102,10 @@ export class SucursalesComponent implements OnInit, OnDestroy {
   }
 
   crearCiudad(): void {
+    if (!this.esPlataforma) {
+      this.mensajeError = 'Solo el Administrador de Plataforma puede gestionar el catálogo global de ciudades.';
+      return;
+    }
     if (!this.nuevaCiudadNombre.trim()) {
       this.mensajeError = 'Ingrese el nombre de la ciudad.';
       return;
@@ -128,10 +154,34 @@ export class SucursalesComponent implements OnInit, OnDestroy {
           delivery_activo: true
         };
         this.cargarSucursales();
+        this.cargarCapacidadesPlan();
       },
       error: (err) => {
         this.guardandoSucursal = false;
         this.mensajeError = formatearErrorApi(err, 'Error al registrar sucursal.');
+      }
+    });
+  }
+
+  alternarEstadoSucursal(sucursal: SucursalDTO): void {
+    this.cambiandoEstadoId = sucursal.id;
+    this.mensajeError = null;
+    this.mensajeExito = null;
+
+    const nuevoEstado = !sucursal.activa;
+    this.orgService.actualizarSucursal(sucursal.id, {
+      activa: nuevoEstado,
+      revision: sucursal.revision ?? 1
+    }).subscribe({
+      next: (actualizada) => {
+        this.cambiandoEstadoId = null;
+        this.mensajeExito = `Sucursal '${actualizada.nombre}' ${actualizada.activa ? 'activada' : 'desactivada'} correctamente.`;
+        this.cargarSucursales();
+        this.cargarCapacidadesPlan();
+      },
+      error: (err) => {
+        this.cambiandoEstadoId = null;
+        this.mensajeError = formatearErrorApi(err, 'No se pudo cambiar el estado de la sucursal.');
       }
     });
   }
@@ -182,7 +232,8 @@ export class SucursalesComponent implements OnInit, OnDestroy {
     this.guardandoSucursal = true;
     this.orgService.configurarTarifasDelivery(this.sucursalTarifas.id, {
       tarifa_base_delivery: this.tarifaBaseEdicion,
-      incremento_anillo_delivery: this.incrementoEdicion
+      incremento_anillo_delivery: this.incrementoEdicion,
+      revision: this.sucursalTarifas.revision
     }).subscribe({
       next: (s) => {
         this.guardandoSucursal = false;
