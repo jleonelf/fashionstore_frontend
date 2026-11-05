@@ -493,6 +493,47 @@
   min-height: 44px;
 }
 
+.medio-pago-caja {
+  margin-bottom: 1rem;
+}
+
+.medio-pago-caja label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.campo-ayuda {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0.35rem 0 0 0;
+}
+
+.presencial-input-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.presencial-input-campo label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.cambio-presencial-nota {
+  font-size: 0.85rem;
+  color: #137333;
+  font-weight: 600;
+  margin: 0.25rem 0 0 0;
+}
+
 @media (max-width: 640px) {
   .line-builder {
     grid-template-columns: 1fr;

@@ -66,6 +66,7 @@ describe('CajaComponent (Persistencia Transaccional, Conciliación y Reintentos)
 
     ventaPresencialSpy = jasmine.createSpyObj<VentaPresencialService>('VentaPresencialService', [
       'registrarVenta',
+      'liquidarVentaPresencial',
       'comprobante'
     ]);
 
@@ -92,6 +93,25 @@ describe('CajaComponent (Persistencia Transaccional, Conciliación y Reintentos)
     cajaServiceSpy.eliminarVentaOfflinePendiente.and.resolveTo();
     cajaServiceSpy.removerVentaOfflinePendiente.and.resolveTo();
     productoServiceSpy.gestionarVariantes.and.returnValue(of([]));
+    ventaPresencialSpy.liquidarVentaPresencial.and.returnValue(of({
+      venta_id: 'vnt-mock-1',
+      numero: 'VTA-001',
+      total_bob: 150,
+      comprobante_id: 'cmp-mock-1',
+      kardex_ids: ['k-1'],
+      medio_pago: 'EFECTIVO',
+      cambio_entregado_bob: 50
+    }));
+    ventaPresencialSpy.comprobante.and.returnValue(of({
+      id: 'cmp-mock-1',
+      venta_id: 'vnt-mock-1',
+      numero: 'CMP-001',
+      fecha_emision: '2026-11-04T12:00:00-04:00',
+      cliente_nombre: 'Cliente General',
+      cliente_nit_ci: '0',
+      total: 150,
+      lineas: []
+    } as any));
 
     await TestBed.configureTestingModule({
       imports: [CajaComponent],
@@ -569,6 +589,114 @@ describe('CajaComponent (Persistencia Transaccional, Conciliación y Reintentos)
       expect(component.turnoActivo).toBeNull();
       expect(component.turnoPendienteRecuperacion as any).toEqual(mockTurno);
       expect(component.error).toContain('el turno existe en el servidor pero no pudo persistirse');
+    }));
+  });
+
+  describe('Venta Presencial Directa en Caja (CU19)', () => {
+    beforeEach(() => {
+      authServiceSpy.obtenerUsuarioActual.and.returnValue({
+        id: 'usr-cajero-1',
+        usuario_id: 'usr-cajero-1',
+        nombre_completo: 'Cajero Test',
+        rol: 'CAJERO',
+        activo: true,
+        sucursal_id: 'suc-111'
+      } as any);
+      component.items = [
+        { variante_id: 'var-1', cantidad: 2 }
+      ];
+      component.reserva = undefined;
+    });
+
+    it('liquida en EFECTIVO respetando el cálculo del servidor y el cambio entregado', fakeAsync(() => {
+      component.metodo = 'EFECTIVO';
+      component.efectivoRecibidoPresencial = 200;
+
+      ventaPresencialSpy.liquidarVentaPresencial.and.returnValue(of({
+        venta_id: 'vnt-directa-1',
+        numero: 'VTA-DIR-001',
+        total_bob: 160,
+        comprobante_id: 'cmp-dir-1',
+        kardex_ids: ['k-1'],
+        medio_pago: 'EFECTIVO',
+        cambio_entregado_bob: 40
+      }));
+
+      component.vender();
+      tick();
+
+      expect(ventaPresencialSpy.liquidarVentaPresencial).toHaveBeenCalledWith(
+        jasmine.objectContaining({
+          sucursal_id: 'suc-111',
+          medio_pago: 'EFECTIVO',
+          efectivo_recibido_bob: 200,
+          lineas: [{ variante_id: 'var-1', cantidad: 2 }]
+        })
+      );
+      expect(component.ventaLiquidada?.total_bob).toBe(160);
+      expect(component.comprobante?.total).toBe(160);
+      expect(component.items.length).toBe(0);
+    }));
+
+    it('liquida con SALDO validando identificación del cliente', fakeAsync(() => {
+      component.metodo = 'SALDO';
+      component.clienteIdPresencial = '';
+      component.vender();
+      expect(component.error).toContain('requiere indicar el identificador del cliente');
+      expect(ventaPresencialSpy.liquidarVentaPresencial).not.toHaveBeenCalled();
+
+      // Al proveer cliente_id y saldo aplicado
+      component.clienteIdPresencial = 'cli-wallet-1';
+      component.saldoAplicadoPresencial = 160;
+
+      ventaPresencialSpy.liquidarVentaPresencial.and.returnValue(of({
+        venta_id: 'vnt-saldo-1',
+        numero: 'VTA-SAL-001',
+        total_bob: 160,
+        comprobante_id: 'cmp-sal-1',
+        kardex_ids: ['k-1'],
+        medio_pago: 'SALDO'
+      }));
+
+      component.vender();
+      tick();
+
+      expect(ventaPresencialSpy.liquidarVentaPresencial).toHaveBeenCalledWith(
+        jasmine.objectContaining({
+          medio_pago: 'SALDO',
+          cliente_id: 'cli-wallet-1',
+          saldo_aplicado_bob: 160
+        })
+      );
+      expect(component.ventaLiquidada?.medio_pago).toBe('SALDO');
+    }));
+
+    it('liquida con STRIPE_TEST requiriendo ID de intención capturada', fakeAsync(() => {
+      component.metodo = 'STRIPE_TEST';
+      component.stripePaymentIntentIdPresencial = '';
+      component.vender();
+      expect(component.error).toContain('requiere el identificador de la intención de pago Stripe');
+
+      component.stripePaymentIntentIdPresencial = 'pi_test_12345';
+      ventaPresencialSpy.liquidarVentaPresencial.and.returnValue(of({
+        venta_id: 'vnt-stripe-1',
+        numero: 'VTA-STR-001',
+        total_bob: 180,
+        comprobante_id: 'cmp-str-1',
+        kardex_ids: ['k-1'],
+        medio_pago: 'STRIPE_TEST'
+      }));
+
+      component.vender();
+      tick();
+
+      expect(ventaPresencialSpy.liquidarVentaPresencial).toHaveBeenCalledWith(
+        jasmine.objectContaining({
+          medio_pago: 'STRIPE_TEST',
+          stripe_payment_intent_id: 'pi_test_12345'
+        })
+      );
+      expect(component.ventaLiquidada?.medio_pago).toBe('STRIPE_TEST');
     }));
   });
 });

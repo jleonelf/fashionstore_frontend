@@ -6,6 +6,8 @@ import { CarritoService } from '../services/carrito.service';
 import { EntregaService } from '../services/entrega.service';
 import { OrganizacionService } from '../../organizacion/services/organizacion.service';
 import { EnriquecimientoService } from '../../catalogo/services/enriquecimiento.service';
+import { SincronizacionOfflineService } from '../../../core/services/sincronizacion-offline.service';
+import { StripeService } from '../services/stripe.service';
 import { CarritoDTO, CoberturaDTO, CotizacionDTO } from '../models/venta-digital.models';
 import { SucursalDTO } from '../../organizacion/models/organizacion.models';
 
@@ -17,6 +19,8 @@ describe('CheckoutComponent (Formulario reactivo, Validaciones e Idempotencia)',
   let entregaServiceSpy: jasmine.SpyObj<EntregaService>;
   let orgServiceSpy: jasmine.SpyObj<OrganizacionService>;
   let enriquecimientoServiceSpy: jasmine.SpyObj<EnriquecimientoService>;
+  let sincronizacionServiceSpy: jasmine.SpyObj<SincronizacionOfflineService>;
+  let stripeServiceSpy: jasmine.SpyObj<StripeService>;
   let routerSpy: jasmine.SpyObj<Router>;
 
   const mockCarrito: CarritoDTO = {
@@ -78,12 +82,27 @@ describe('CheckoutComponent (Formulario reactivo, Validaciones e Idempotencia)',
 
   beforeEach(async () => {
     carritoServiceSpy = jasmine.createSpyObj<CarritoService>('CarritoService', [
-      'obtenerMio', 'cobertura', 'checkout'
+      'obtenerMio', 'cobertura', 'checkout', 'vaciar'
     ]);
     entregaServiceSpy = jasmine.createSpyObj<EntregaService>('EntregaService', ['cotizar']);
     orgServiceSpy = jasmine.createSpyObj<OrganizacionService>('OrganizacionService', ['gestionarSucursales']);
     enriquecimientoServiceSpy = jasmine.createSpyObj<EnriquecimientoService>('EnriquecimientoService', ['obtenerVariante']);
+    sincronizacionServiceSpy = jasmine.createSpyObj<SincronizacionOfflineService>('SincronizacionOfflineService', [
+      'registrarCompraOffline'
+    ], {
+      estaEnLinea: true
+    });
+    stripeServiceSpy = jasmine.createSpyObj<StripeService>('StripeService', [
+      'prepararMetodo',
+      'consultarMetodo'
+    ]);
     routerSpy = jasmine.createSpyObj<Router>('Router', ['navigate']);
+
+    stripeServiceSpy.prepararMetodo.and.returnValue(of({
+      preparacion_pago_id: 'prep-mock-123',
+      client_secret: 'seti_secret_123',
+      estado: 'LISTO'
+    }));
 
     carritoServiceSpy.obtenerMio.and.returnValue(of(mockCarrito));
     carritoServiceSpy.cobertura.and.returnValue(of(mockCobertura));
@@ -106,6 +125,8 @@ describe('CheckoutComponent (Formulario reactivo, Validaciones e Idempotencia)',
         { provide: EntregaService, useValue: entregaServiceSpy },
         { provide: OrganizacionService, useValue: orgServiceSpy },
         { provide: EnriquecimientoService, useValue: enriquecimientoServiceSpy },
+        { provide: SincronizacionOfflineService, useValue: sincronizacionServiceSpy },
+        { provide: StripeService, useValue: stripeServiceSpy },
         { provide: Router, useValue: routerSpy }
       ]
     }).compileComponents();
@@ -306,5 +327,76 @@ describe('CheckoutComponent (Formulario reactivo, Validaciones e Idempotencia)',
       expect(component.cotizacion).toBeNull();
       expect(component.puedeConfirmar).toBeTrue();
     });
+
+    it('permite guardar la compra en cola offline cuando se encuentra sin conexión', fakeAsync(() => {
+      // Simular offline
+      spyOnProperty(component, 'estaEnLinea', 'get').and.returnValue(false);
+      sincronizacionServiceSpy.registrarCompraOffline.and.returnValue(Promise.resolve({
+        operacion_id: 'op-compra-123',
+        version_esquema: 1,
+        tipo: 'SOLICITAR_COMPRA',
+        creada_local_en: '2026-11-04T12:00:00-04:00',
+        empresa_id: 'emp-1',
+        usuario_id: 'usr-1',
+        dispositivo_id: 'disp-1',
+        secuencia_local: 1,
+        referencia_horaria_id: 'ref-1',
+        datos: {} as any,
+        estado_envio: 'PENDIENTE_ENVIO',
+        actualizado_en: '2026-11-04T12:00:00-04:00'
+      }));
+      carritoServiceSpy.vaciar.and.returnValue(of({} as any));
+
+      component.checkoutForm.controls.sucursalId.setValue('suc-1');
+      component.checkoutForm.controls.modalidad.setValue('RECOJO');
+
+      component.confirmarCheckout();
+      tick();
+
+      expect(sincronizacionServiceSpy.registrarCompraOffline).toHaveBeenCalled();
+      expect(routerSpy.navigate).toHaveBeenCalledWith(['/mis-pedidos']);
+    }));
+
+    it('prepara el método de pago cuando se invoca prepararMetodoPago', () => {
+      component.prepararMetodoPago();
+      expect(stripeServiceSpy.prepararMetodo).toHaveBeenCalled();
+      expect(component.preparacionPagoId).toBe('prep-mock-123');
+    });
+
+    it('incluye autorizacion_cobro v3 en la compra offline si el cliente otorga consentimiento', fakeAsync(() => {
+      spyOnProperty(component, 'estaEnLinea', 'get').and.returnValue(false);
+      sincronizacionServiceSpy.registrarCompraOffline.and.returnValue(Promise.resolve({
+        operacion_id: 'op-compra-v3',
+        version_esquema: 3,
+        tipo: 'SOLICITAR_COMPRA',
+        creada_local_en: '2026-11-04T12:00:00-04:00',
+        empresa_id: 'emp-1',
+        usuario_id: 'usr-1',
+        dispositivo_id: 'disp-1',
+        secuencia_local: 1,
+        referencia_horaria_id: 'ref-1',
+        datos: {} as any,
+        estado_envio: 'PENDIENTE_ENVIO',
+        actualizado_en: '2026-11-04T12:00:00-04:00'
+      }));
+      carritoServiceSpy.vaciar.and.returnValue(of({} as any));
+
+      component.checkoutForm.controls.sucursalId.setValue('suc-1');
+      component.checkoutForm.controls.modalidad.setValue('RECOJO');
+      component.consentimientoCobroV3 = true;
+      component.preparacionPagoId = 'prep-mock-123';
+
+      component.confirmarCheckout();
+      tick();
+
+      expect(sincronizacionServiceSpy.registrarCompraOffline).toHaveBeenCalledWith(
+        jasmine.objectContaining({
+          autorizacion_cobro: jasmine.objectContaining({
+            preparacion_pago_id: 'prep-mock-123',
+            permite_cobro_al_reconectar: true
+          })
+        })
+      );
+    }));
   });
 });

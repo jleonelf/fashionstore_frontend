@@ -1,9 +1,18 @@
-import { Component, DestroyRef, inject, OnDestroy } from '@angular/core';
+import { Component, DestroyRef, inject, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { IAAnaliticaService } from '../services/ia-analitica.service';
-import { ReporteRespuestaDTO, DecisionRespuestaDTO, DecisionItemDTO } from '../models/analitica-ia.models';
+import {
+  ReporteRespuestaDTO,
+  DecisionRespuestaDTO,
+  DecisionItemDTO,
+  TipoReportePermitido,
+  ReporteInterpretadoResultadoDTO,
+  PronosticoDemandaResultadoDTO,
+  SegmentacionProductosResultadoDTO,
+  OrigenDatosML
+} from '../models/analitica-ia.models';
 import { formatearBs, type DecimalApi } from '../../../core/utils/moneda.util';
 import { etiquetaEstado, claseEstado } from '../../../core/utils/estado-mapper.util';
 import { formatearErrorApi } from '../../../core/utils/error-handler.util';
@@ -47,14 +56,24 @@ export interface DecisionItemVM extends DecisionItemDTO {
   templateUrl: './inteligencia.component.html',
   styleUrls: ['./inteligencia.component.css']
 })
-export class InteligenciaComponent implements OnDestroy {
+export class InteligenciaComponent implements OnInit, OnDestroy {
   activeTab: 'reportes' | 'decisiones' = 'reportes';
+  subTab: 'reportes' | 'pronostico' | 'segmentacion' = 'reportes';
 
-  // Reportes
+  // CU24: Reportes interpretados tipados
   consulta = '';
   reporte: ReporteRespuestaDTO | null = null;
+  reporteTipado: ReporteInterpretadoResultadoDTO | null = null;
   generando = false;
   errorReporte: string | null = null;
+  tipoSeleccionado?: TipoReportePermitido;
+
+  tiposPermitidos: { id: TipoReportePermitido; label: string; desc: string }[] = [
+    { id: 'VENTAS_POR_SUCURSAL', label: 'Ventas por sucursal', desc: 'Consolidado de ingresos y unidades por punto de venta' },
+    { id: 'RANKING_PRODUCTOS', label: 'Ranking de productos', desc: 'Prendas más vendidas con ingresos totales' },
+    { id: 'EVOLUCION_SEMANAL', label: 'Evolución semanal', desc: 'Serie temporal de transacciones e ingresos por semana' },
+    { id: 'INGRESOS_POR_CATEGORIA', label: 'Ingresos por categoría', desc: 'Distribución de ventas por familias del catálogo' }
+  ];
 
   // Secuencia de carga textual intencional
   readonly pasosCarga = [
@@ -64,6 +83,23 @@ export class InteligenciaComponent implements OnDestroy {
   ];
   pasoCargaActual = 0;
   private intervaloCarga: any = null;
+
+  // CU10: Pronóstico supervisado de demanda
+  pronostico: PronosticoDemandaResultadoDTO | null = null;
+  pronosticoSemanas = 4;
+  pronosticoOrigen: OrigenDatosML = 'AUTO';
+  pronosticoSemilla = 42;
+  consultandoPronostico = false;
+  errorPronostico: string | null = null;
+
+  // CU11: Segmentación no supervisada de productos
+  segmentacion: SegmentacionProductosResultadoDTO | null = null;
+  segmentacionGrupos = 4;
+  segmentacionPeriodo = 60;
+  segmentacionOrigen: OrigenDatosML = 'AUTO';
+  segmentacionSemilla = 42;
+  consultandoSegmentacion = false;
+  errorSegmentacion: string | null = null;
 
   // Decisiones
   diasVentana = 30;
@@ -76,11 +112,22 @@ export class InteligenciaComponent implements OnDestroy {
 
   constructor(private iaService: IAAnaliticaService) {}
 
+  ngOnInit(): void {}
+
   ngOnDestroy(): void {
     this.limpiarIntervaloCarga();
   }
 
   get tituloReporte(): string {
+    if (this.reporteTipado) {
+      const titulosTipados: Record<TipoReportePermitido, string> = {
+        VENTAS_POR_SUCURSAL: 'Ventas por sucursal',
+        RANKING_PRODUCTOS: 'Ranking de prendas más vendidas',
+        EVOLUCION_SEMANAL: 'Evolución semanal de ventas',
+        INGRESOS_POR_CATEGORIA: 'Ingresos por categoría'
+      };
+      return titulosTipados[this.reporteTipado.tipo_reporte] || 'Reporte interpretado';
+    }
     const titulos: Record<string, string> = {
       ventasPorSucursal: 'Ventas por sucursal',
       inventarioPorSucursal: 'Inventario por sucursal',
@@ -94,12 +141,202 @@ export class InteligenciaComponent implements OnDestroy {
   }
 
   get nombreProveedor(): string {
+    if (this.reporteTipado) {
+      const p = String(this.reporteTipado.filtros_efectivos?.['proveedor'] || this.reporteTipado.proveedor || '').toUpperCase();
+      return p.includes('GEMINI') ? 'Gemini analítico' : 'Motor determinista local';
+    }
     if (!this.reporte?.proveedor) return 'Motor analítico seguro';
     return this.reporte.proveedor === 'GEMINI' ? 'Gemini analítico' : 'Motor determinista local';
   }
 
-  // --- View Models para cada una de las 7 funciones reales ---
+  get esProveedorGemini(): boolean {
+    return this.nombreProveedor.includes('Gemini');
+  }
 
+  // --- CU24: Ejecutar reporte tipado o generativo ---
+  ejecutarReporteTipado(tipo?: TipoReportePermitido): void {
+    const textoConsulta = this.consulta.trim() || (tipo ? `Reporte de ${tipo.toLowerCase().replace(/_/g, ' ')}` : 'ventas por sucursal');
+    this.generando = true;
+    this.errorReporte = null;
+    this.reporte = null;
+    this.reporteTipado = null;
+    this.iniciarSecuenciaCarga();
+
+    this.iaService.solicitarReporteInterpretado({
+      consulta: textoConsulta,
+      tipo_reporte: tipo
+    })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: r => {
+          this.reporteTipado = r;
+          this.generando = false;
+          this.limpiarIntervaloCarga();
+        },
+        error: () => {
+          // Fallback a reporte legado si el backend aún no expone la ruta tipada
+          this.generarReporteLegado(textoConsulta);
+        }
+      });
+  }
+
+  generarReporte(): void {
+    if (!this.consulta.trim() || this.generando) return;
+    this.generando = true;
+    this.errorReporte = null;
+    this.reporte = null;
+    this.reporteTipado = null;
+    this.iniciarSecuenciaCarga();
+
+    this.iaService.generarReporte(this.consulta.trim())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: r => {
+          this.reporte = r;
+          this.generando = false;
+          this.limpiarIntervaloCarga();
+        },
+        error: e => {
+          this.errorReporte = formatearErrorApi(e, 'No se pudo generar el reporte.');
+          this.generando = false;
+          this.limpiarIntervaloCarga();
+        }
+      });
+  }
+
+  private generarReporteLegado(consulta: string): void {
+    this.iaService.generarReporte(consulta)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: r => {
+          this.reporte = r;
+          this.generando = false;
+          this.limpiarIntervaloCarga();
+        },
+        error: e => {
+          this.errorReporte = formatearErrorApi(e, 'No se pudo generar el reporte.');
+          this.generando = false;
+          this.limpiarIntervaloCarga();
+        }
+      });
+  }
+
+  exportarCsv(): void {
+    if (!this.reporteTipado || !this.reporteTipado.filas.length) return;
+    const cols = this.reporteTipado.columnas;
+    const lineas: string[] = [cols.join(',')];
+    for (const fila of this.reporteTipado.filas) {
+      const valores = cols.map(c => {
+        const val = fila[c];
+        const str = val !== null && val !== undefined ? String(val).replace(/"/g, '""') : '';
+        return `"${str}"`;
+      });
+      lineas.push(valores.join(','));
+    }
+    const contenido = lineas.join('\n');
+    const blob = new Blob([contenido], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `reporte_${this.reporteTipado.tipo_reporte.toLowerCase()}_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  // --- CU10: Pronóstico Supervisado de Demanda ---
+  consultarPronostico(): void {
+    this.consultandoPronostico = true;
+    this.errorPronostico = null;
+
+    this.iaService.consultarPronosticos({
+      semanas_adelante: this.pronosticoSemanas,
+      origen_datos: this.pronosticoOrigen,
+      semilla: this.pronosticoSemilla
+    })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: res => {
+          this.pronostico = res;
+          this.consultandoPronostico = false;
+        },
+        error: e => {
+          this.errorPronostico = formatearErrorApi(e, 'No se pudo obtener el pronóstico de demanda.');
+          this.consultandoPronostico = false;
+        }
+      });
+  }
+
+  entrenarPronostico(): void {
+    this.consultandoPronostico = true;
+    this.errorPronostico = null;
+
+    this.iaService.entrenarSupervisado({
+      semanas_adelante: this.pronosticoSemanas,
+      origen_datos: this.pronosticoOrigen,
+      semilla: this.pronosticoSemilla
+    })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: res => {
+          this.pronostico = res;
+          this.consultandoPronostico = false;
+        },
+        error: e => {
+          this.errorPronostico = formatearErrorApi(e, 'No se pudo entrenar el modelo de pronóstico.');
+          this.consultandoPronostico = false;
+        }
+      });
+  }
+
+  // --- CU11: Segmentación No Supervisada de Productos ---
+  consultarSegmentacion(): void {
+    this.consultandoSegmentacion = true;
+    this.errorSegmentacion = null;
+
+    this.iaService.consultarSegmentacion({
+      num_grupos: this.segmentacionGrupos,
+      periodo_dias: this.segmentacionPeriodo,
+      origen_datos: this.segmentacionOrigen,
+      semilla: this.segmentacionSemilla
+    })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: res => {
+          this.segmentacion = res;
+          this.consultandoSegmentacion = false;
+        },
+        error: e => {
+          this.errorSegmentacion = formatearErrorApi(e, 'No se pudo obtener la segmentación de productos.');
+          this.consultandoSegmentacion = false;
+        }
+      });
+  }
+
+  entrenarSegmentacion(): void {
+    this.consultandoSegmentacion = true;
+    this.errorSegmentacion = null;
+
+    this.iaService.entrenarNoSupervisado({
+      num_grupos: this.segmentacionGrupos,
+      periodo_dias: this.segmentacionPeriodo,
+      origen_datos: this.segmentacionOrigen,
+      semilla: this.segmentacionSemilla
+    })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: res => {
+          this.segmentacion = res;
+          this.consultandoSegmentacion = false;
+        },
+        error: e => {
+          this.errorSegmentacion = formatearErrorApi(e, 'No se pudo entrenar la segmentación.');
+          this.consultandoSegmentacion = false;
+        }
+      });
+  }
+
+  // --- View Models para compatibilidad legada ---
   get ventasPorSucursalBarsVM(): HorizontalBarItem[] {
     const filas = this.reporte?.datos['por_sucursal'];
     if (!Array.isArray(filas)) return [];
@@ -227,6 +464,9 @@ export class InteligenciaComponent implements OnDestroy {
   }
 
   get reporteVacio(): boolean {
+    if (this.reporteTipado) {
+      return !this.reporteTipado.filas || this.reporteTipado.filas.length === 0;
+    }
     if (!this.reporte?.datos) return true;
     const d = this.reporte.datos;
     if (d['total'] === 0) return true;
@@ -249,29 +489,6 @@ export class InteligenciaComponent implements OnDestroy {
         ventasPct: Math.min(100, Math.round((d.ventas_periodo / max) * 100))
       };
     });
-  }
-
-  generarReporte(): void {
-    if (!this.consulta.trim() || this.generando) return;
-    this.generando = true;
-    this.errorReporte = null;
-    this.reporte = null;
-    this.iniciarSecuenciaCarga();
-
-    this.iaService.generarReporte(this.consulta.trim())
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: r => {
-          this.reporte = r;
-          this.generando = false;
-          this.limpiarIntervaloCarga();
-        },
-        error: e => {
-          this.errorReporte = formatearErrorApi(e, 'No se pudo generar el reporte.');
-          this.generando = false;
-          this.limpiarIntervaloCarga();
-        }
-      });
   }
 
   consultarDecisiones(): void {
@@ -328,5 +545,20 @@ export class InteligenciaComponent implements OnDestroy {
 
   etiqueta(e: string): string { return etiquetaEstado(e); }
   clase(e: string): string { return claseEstado(e); }
-  bs(m: DecimalApi | null | undefined): string { return formatearBs(m); }
+  bs(m: DecimalApi | number | null | undefined): string { return formatearBs(m); }
+
+  formatearEncabezadoColumna(col: string): string {
+    return (col || '').replace(/_bob/gi, '').replace(/_/g, ' ').toUpperCase();
+  }
+
+  esColumnaMonetaria(col: string): boolean {
+    const c = (col || '').toLowerCase();
+    if (c.includes('ventas') || c.includes('unidades') || c.includes('cantidad')) return false;
+    return c.includes('ingresos') || c.includes('monto') || c.includes('total') || c.includes('subtotal') || c.includes('precio');
+  }
+
+  formatearMonto(val: unknown): string {
+    const n = Number(val);
+    return isNaN(n) ? '0.00' : n.toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
 }

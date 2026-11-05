@@ -2,7 +2,15 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
-import { IntencionDTO, EstadoPagoDTO } from '../models/venta-digital.models';
+import {
+  IntencionDTO,
+  EstadoPagoDTO,
+  MetodoPrepararDTO,
+  MetodoPreparadoDTO,
+  OrdenPagoCrearDTO,
+  OrdenPagoDTO,
+  ContinuarAccionDTO
+} from '../models/venta-digital.models';
 
 @Injectable({ providedIn: 'root' })
 export class StripeService {
@@ -27,6 +35,43 @@ export class StripeService {
 
   consultarEstado(ventaId: string): Observable<EstadoPagoDTO> {
     return this.http.get<EstadoPagoDTO>(`${this.api}/pagos/stripe/estado/${ventaId}`);
+  }
+
+  prepararMetodo(dto?: MetodoPrepararDTO, idempotencyKey?: string): Observable<MetodoPreparadoDTO> {
+    const key = idempotencyKey || crypto.randomUUID();
+    return this.http.post<MetodoPreparadoDTO>(
+      `${this.api}/pagos/stripe/metodos/preparar`,
+      dto || {},
+      { headers: new HttpHeaders({ 'Idempotency-Key': key }) }
+    );
+  }
+
+  consultarMetodo(preparacionPagoId: string): Observable<MetodoPreparadoDTO> {
+    return this.http.get<MetodoPreparadoDTO>(
+      `${this.api}/pagos/stripe/metodos/${preparacionPagoId}`
+    );
+  }
+
+  crearOrdenPago(dto: OrdenPagoCrearDTO, idempotencyKey?: string): Observable<OrdenPagoDTO> {
+    const key = idempotencyKey || crypto.randomUUID();
+    return this.http.post<OrdenPagoDTO>(
+      `${this.api}/pagos/stripe/ordenes`,
+      dto,
+      { headers: new HttpHeaders({ 'Idempotency-Key': key }) }
+    );
+  }
+
+  continuarAccion(
+    ordenPagoId: string,
+    dto: ContinuarAccionDTO,
+    idempotencyKey?: string
+  ): Observable<OrdenPagoDTO> {
+    const key = idempotencyKey || crypto.randomUUID();
+    return this.http.post<OrdenPagoDTO>(
+      `${this.api}/pagos/stripe/ordenes/${ordenPagoId}/continuar-accion`,
+      dto,
+      { headers: new HttpHeaders({ 'Idempotency-Key': key }) }
+    );
   }
 
   /**

@@ -19,6 +19,8 @@
       <a routerLink="/mis-pedidos" routerLinkActive="active" class="nav-item">Mis pedidos</a>
       <a routerLink="/reservas" routerLinkActive="active" class="nav-item">Reservas</a>
       <a routerLink="/historial" routerLinkActive="active" class="nav-item">Mis compras</a>
+      <a routerLink="/mi-saldo" routerLinkActive="active" class="nav-item">Mi saldo</a>
+      <a routerLink="/reembolsos" routerLinkActive="active" class="nav-item">Reembolsos</a>
     </ng-container>
 
     <!-- Rol CAJERO -->
@@ -48,6 +50,7 @@
           <a routerLink="/promociones" routerLinkActive="active" (click)="cerrarDropdowns()" class="dropdown-item">Promociones</a>
           <a routerLink="/inteligencia" routerLinkActive="active" (click)="cerrarDropdowns()" class="dropdown-item">Inteligencia</a>
           <a routerLink="/operaciones" routerLinkActive="active" (click)="cerrarDropdowns()" class="dropdown-item">Operaciones tienda</a>
+          <a routerLink="/reembolsos" routerLinkActive="active" (click)="cerrarDropdowns()" class="dropdown-item">Reembolsos</a>
         </div>
       </div>
     </ng-container>
@@ -71,6 +74,7 @@
           <a routerLink="/traslados" routerLinkActive="active" (click)="cerrarDropdowns()" class="dropdown-item">Traslados</a>
           <a routerLink="/caja" routerLinkActive="active" (click)="cerrarDropdowns()" class="dropdown-item">Caja</a>
           <a routerLink="/operaciones" routerLinkActive="active" (click)="cerrarDropdowns()" class="dropdown-item">Operaciones</a>
+          <a routerLink="/reembolsos" routerLinkActive="active" (click)="cerrarDropdowns()" class="dropdown-item">Reembolsos</a>
         </div>
       </div>
 
@@ -188,6 +192,8 @@
       <a routerLink="/mis-pedidos" routerLinkActive="active" *ngIf="puedeVerMisPedidos()" (click)="cerrarMenu()" class="drawer-link"><span>Mis pedidos</span></a>
       <a routerLink="/reservas" routerLinkActive="active" *ngIf="puedeVerReservas()" (click)="cerrarMenu()" class="drawer-link"><span>Reservas</span></a>
       <a routerLink="/historial" routerLinkActive="active" *ngIf="puedeVerHistorial()" (click)="cerrarMenu()" class="drawer-link"><span>Mis compras</span></a>
+      <a routerLink="/mi-saldo" routerLinkActive="active" *ngIf="puedeVerSaldo()" (click)="cerrarMenu()" class="drawer-link"><span>Mi saldo</span></a>
+      <a routerLink="/reembolsos" routerLinkActive="active" *ngIf="puedeVerReembolsos()" (click)="cerrarMenu()" class="drawer-link"><span>Reembolsos</span></a>
     </div>
 
     <!-- Gestión Operativa para Cajero / Encargado / Admin -->
@@ -204,6 +210,9 @@
       </a>
       <a routerLink="/operaciones" routerLinkActive="active" *ngIf="puedeVerOperaciones()" (click)="cerrarMenu()" class="drawer-link">
         <span>Operaciones tienda</span>
+      </a>
+      <a routerLink="/reembolsos" routerLinkActive="active" *ngIf="puedeVerReembolsos()" (click)="cerrarMenu()" class="drawer-link">
+        <span>Reembolsos</span>
       </a>
     </div>
 

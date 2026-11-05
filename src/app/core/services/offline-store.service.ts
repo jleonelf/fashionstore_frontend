@@ -96,11 +96,21 @@ export interface ReferenciaHorariaLocal {
   guardada_en: string;
 }
 
-export type EstadoEnvio = 'PENDIENTE_ENVIO' | 'ENVIANDO' | 'SINCRONIZADA' | 'ERROR';
+export type EstadoEnvio =
+  | 'PENDIENTE_ENVIO'
+  | 'ENVIANDO'
+  | 'SINCRONIZADA'
+  | 'ERROR'
+  | 'PENDIENTE_INTERVENCION'
+  | 'REQUIERE_ACCION';
 
 export interface OperacionLinea {
   variante_id: string;
   cantidad: number;
+}
+
+export interface OperacionLineaCompra extends OperacionLinea {
+  precio_visto_bob?: string;
 }
 
 export interface OperacionDatosReserva {
@@ -109,29 +119,89 @@ export interface OperacionDatosReserva {
   lineas: OperacionLinea[];
 }
 
+export interface AutorizacionCobroOfflineDTO {
+  consentimiento?: boolean;
+  metodo_preparado_id?: string;
+  huella_dispositivo?: string;
+  // Campos formales Protocolo v3 (operacion.schema.json / schemas_sincronizacion.py)
+  consentimiento_id?: string;
+  aceptado_local_en?: string;
+  huella_compra?: string;
+  base_bob?: string;
+  descuento_bob?: string;
+  envio_bob?: string;
+  total_bob?: string;
+  moneda_cobro?: 'USD';
+  importe_cobro?: string;
+  tasa_id?: string;
+  tasa_bob_por_usd?: string;
+  condiciones_version?: string;
+  vigente_hasta?: string;
+  preparacion_pago_id?: string;
+  permite_cobro_al_reconectar?: boolean;
+}
+
+export interface OperacionDatosCompra {
+  sucursal_id: string;
+  visita_en?: string;
+  modalidad: 'RECOJO' | 'DELIVERY';
+  lineas: (OperacionLinea | OperacionLineaCompra)[];
+  direccion?: string;
+  anillo_destino?: number;
+  autorizacion_cobro?: AutorizacionCobroOfflineDTO;
+}
+
+export type TipoOperacionOffline = 'SOLICITAR_RESERVA' | 'SOLICITAR_COMPRA';
+
 export interface ResultadoOperacionDurable {
   operacion_id: string;
-  estado: 'ACEPTADA' | 'RECHAZADA' | 'CONFLICTO' | string;
-  codigo: 'OK' | 'SIN_STOCK' | 'SOLICITUD_VENCIDA' | 'TIEMPO_INCOHERENTE' | 'PLAN_NO_HABILITADO' | string;
-  recibida_en: string;
-  detalle: string;
+  estado:
+    | 'ACEPTADA'
+    | 'RECHAZADA'
+    | 'CONFLICTO'
+    | 'PENDIENTE_INTERVENCION'
+    | 'REQUIERE_NUEVA_ACEPTACION'
+    | 'REQUIERE_ACCION_CLIENTE'
+    | 'PENDIENTE_PAGO'
+    | 'REQUIERE_ACEPTACION_PRECIO'
+    | 'REGISTRADA_CENTRAL'
+    | 'CONCILIACION_REQUERIDA'
+    | string;
+  codigo?:
+    | 'OK'
+    | 'SIN_STOCK'
+    | 'SOLICITUD_VENCIDA'
+    | 'TIEMPO_INCOHERENTE'
+    | 'PLAN_NO_HABILITADO'
+    | 'PRECIO_CAMBIADO'
+    | 'CUPO_INSUFICIENTE'
+    | 'TASA_NO_VIGENTE'
+    | 'OPERACION_MODIFICADA'
+    | 'PAGO_EN_VERIFICACION'
+    | 'AUTORIZACION_REQUERIDA'
+    | 'ACCION_CLIENTE_REQUERIDA'
+    | string;
+  recibida_en?: string;
+  detalle?: string;
   revision?: number;
   aceptada_en?: string;
   recurso_id?: string;
   vence_en?: string;
+  client_secret?: string;
+  accion_url?: string;
 }
 
 export interface OperacionEncolada {
   operacion_id: string;
-  version_esquema: 1;
-  tipo: 'SOLICITAR_RESERVA';
+  version_esquema: 1 | 2 | 3 | number;
+  tipo: TipoOperacionOffline;
   creada_local_en: string; // Formato con offset de Bolivia (-04:00)
   empresa_id: string;
   usuario_id: string;
   dispositivo_id: string;
   secuencia_local: number;
   referencia_horaria_id: string;
-  datos: OperacionDatosReserva;
+  datos: OperacionDatosReserva | OperacionDatosCompra;
   estado_envio: EstadoEnvio;
   resultado?: ResultadoOperacionDurable;
   error_mensaje?: string;

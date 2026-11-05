@@ -170,6 +170,8 @@ export class ShellComponent implements OnInit {
   puedeVerCaja(): boolean { return ['ADMINISTRADOR','CAJERO'].includes(this.usuarioActual?.rol || ''); }
   puedeVerOperaciones(): boolean { return ['ADMINISTRADOR','ENCARGADO'].includes(this.usuarioActual?.rol || ''); }
   puedeVerHistorial(): boolean { return this.usuarioActual?.rol === 'CLIENTE'; }
+  puedeVerSaldo(): boolean { return this.esCliente(); }
+  puedeVerReembolsos(): boolean { return ['CLIENTE', 'ADMINISTRADOR', 'ENCARGADO'].includes(this.usuarioActual?.rol || ''); }
 
   cerrarSesion(): void {
     this.cerrarDropdowns();

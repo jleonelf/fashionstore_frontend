@@ -10,7 +10,15 @@ describe('InteligenciaComponent (Visualizaciones de IA y decisiones de inventari
   let iaSpy: jasmine.SpyObj<IAAnaliticaService>;
 
   beforeEach(async () => {
-    iaSpy = jasmine.createSpyObj<IAAnaliticaService>('IAAnaliticaService', ['generarReporte', 'decisionesInventario']);
+    iaSpy = jasmine.createSpyObj<IAAnaliticaService>('IAAnaliticaService', [
+      'generarReporte',
+      'decisionesInventario',
+      'solicitarReporteInterpretado',
+      'consultarPronosticos',
+      'entrenarSupervisado',
+      'consultarSegmentacion',
+      'entrenarNoSupervisado'
+    ]);
     await TestBed.configureTestingModule({
       imports: [InteligenciaComponent],
       providers: [{ provide: IAAnaliticaService, useValue: iaSpy }]
@@ -387,6 +395,124 @@ describe('InteligenciaComponent (Visualizaciones de IA y decisiones de inventari
         expect(rect?.hasAttribute('width')).toBeTrue();
         expect(rect?.getAttribute('style')).toBeNull(); // Cero inline styles
       });
+    });
+  });
+
+  describe('Modelos de Analítica Avanzada e IA (CU24, CU10, CU11)', () => {
+    it('CU24: ejecuta reporte interpretado tipado con narrativa ejecutiva e insignia honesta de proveedor', () => {
+      iaSpy.solicitarReporteInterpretado.and.returnValue(of({
+        consulta_id: 'c-1',
+        tipo_reporte: 'VENTAS_POR_SUCURSAL',
+        grafico_sugerido: 'BARRAS',
+        narrativa: 'Las ventas se concentran en un 65% en la sucursal Central Calacoto.',
+        columnas: ['sucursal_nombre', 'total_ventas', 'total_ingresos_bob'],
+        filas: [
+          { sucursal_nombre: 'Central Calacoto', total_ventas: 30, total_ingresos_bob: 8500 }
+        ],
+        totales: { total_ventas: 30, total_ingresos_bob: 8500 },
+        filtros_efectivos: { proveedor: 'GEMINI' },
+        generado_en: '2026-11-04T12:00:00Z',
+        origen: 'REAL'
+      }));
+
+      component.ejecutarReporteTipado('VENTAS_POR_SUCURSAL');
+      fixture.detectChanges();
+
+      expect(iaSpy.solicitarReporteInterpretado).toHaveBeenCalledWith(jasmine.objectContaining({
+        tipo_reporte: 'VENTAS_POR_SUCURSAL'
+      }));
+      expect(component.reporteTipado).toBeTruthy();
+      expect(component.nombreProveedor).toContain('Gemini');
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.textContent).toContain('Las ventas se concentran');
+      expect(compiled.textContent).toContain('Central Calacoto');
+      expect(compiled.textContent).toContain('Bs 8.500,00');
+    });
+
+    it('CU10: consulta pronóstico de demanda supervisado con métricas honestas y alerta de datos insuficientes', () => {
+      iaSpy.consultarPronosticos.and.returnValue(of({
+        modelo_id: 'mod-1',
+        modelo_version: 'v1.0',
+        dataset_version: 'ds-1',
+        entrenado_en: '2026-11-04T12:00:00Z',
+        origen_datos: 'REAL',
+        metricas: {
+          estado: 'DATOS_INSUFICIENTES',
+          mae: 1.5,
+          rmse: 2.1,
+          r2: 0.85,
+          baseline_mae: 2.5,
+          mejora_vs_baseline_pct: 40.0,
+          razon: 'Datos históricos limitados: El negocio cuenta con menos semanas de venta de las recomendadas.'
+        },
+        predicciones: [
+          {
+            semana: 1,
+            producto_nombre: 'Vestido Seda Noir',
+            unidades_estimadas: 15,
+            confianza: 0.95
+          }
+        ]
+      }));
+
+      component.subTab = 'pronostico';
+      component.consultarPronostico();
+      fixture.detectChanges();
+
+      expect(iaSpy.consultarPronosticos).toHaveBeenCalledWith(jasmine.objectContaining({
+        semanas_adelante: 4,
+        origen_datos: 'AUTO'
+      }));
+      expect(component.pronostico).toBeTruthy();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.textContent).toContain('DATOS_INSUFICIENTES');
+      expect(compiled.textContent).toContain('Datos históricos limitados');
+      expect(compiled.textContent).toContain('+40.0%');
+      expect(compiled.textContent).toContain('Vestido Seda Noir');
+    });
+
+    it('CU11: consulta segmentación de catálogo no supervisada con K-Means y métricas de clustering', () => {
+      iaSpy.consultarSegmentacion.and.returnValue(of({
+        modelo_id: 'mod-kmeans-1',
+        modelo_version: 'v1.0',
+        generado_en: '2026-11-04T12:00:00Z',
+        origen_datos: 'REAL',
+        metricas: {
+          estado: 'ENTRENADO',
+          inercia: 45.2,
+          silhouette_score: 0.62,
+          num_clusters: 2,
+          num_productos: 10
+        },
+        grupos: [
+          {
+            grupo_id: 0,
+            nombre_grupo: 'Alta rotación y margen medio',
+            descripcion: 'Prendas con venta constante semanal.',
+            cantidad_productos: 6,
+            centroide: {
+              ventas_promedio_diarias: 3.5,
+              margen_estimado_pct: 35.0,
+              rotacion_stock: 4.2
+            },
+            productos_muestra: [{ id: 'p-1', nombre: 'Vestido Seda Noir' }]
+          }
+        ]
+      }));
+
+      component.subTab = 'segmentacion';
+      component.consultarSegmentacion();
+      fixture.detectChanges();
+
+      expect(iaSpy.consultarSegmentacion).toHaveBeenCalled();
+      expect(component.segmentacion).toBeTruthy();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.textContent).toContain('Alta rotación y margen medio');
+      expect(compiled.textContent).toContain('0.620');
+      expect(compiled.textContent).toContain('Vestido Seda Noir');
     });
   });
 });

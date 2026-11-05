@@ -306,9 +306,44 @@
           </table>
         </div>
 
-        <!-- Cobro en Efectivo -->
+        <!-- Cobro en Efectivo, Saldo o Tarjeta de prueba -->
         <div class="cobro-box" *ngIf="lineasVentaOffline.length">
-          <div class="totales-resumen">
+          <div class="medio-pago-caja">
+            <label>
+              <span>Medio de liquidación</span>
+              <select [(ngModel)]="medioPagoCaja">
+                <option value="EFECTIVO">Efectivo en caja</option>
+                <option value="SALDO">Saldo del cliente</option>
+                <option value="STRIPE_TEST">Tarjeta de prueba (Stripe Test)</option>
+              </select>
+            </label>
+          </div>
+
+          <div *ngIf="medioPagoCaja === 'SALDO'" class="fila-input">
+            <label>
+              <span>Identificador del cliente</span>
+              <input
+                type="text"
+                [(ngModel)]="clienteIdCaja"
+                placeholder="UUID del cliente con saldo disponible"
+              >
+            </label>
+            <p class="campo-ayuda">El saldo se debitará de la cuenta del cliente previa validación en servidor central.</p>
+          </div>
+
+          <div *ngIf="medioPagoCaja === 'STRIPE_TEST'" class="fila-input">
+            <label>
+              <span>Intención de pago capturada (PaymentIntent ID)</span>
+              <input
+                type="text"
+                [(ngModel)]="stripePaymentIntentIdCaja"
+                placeholder="Ej. pi_test_..."
+              >
+            </label>
+            <p class="campo-ayuda">Se verificará la captura del cobro en la pasarela Stripe antes de la entrega física.</p>
+          </div>
+
+          <div class="totales-resumen" *ngIf="medioPagoCaja === 'EFECTIVO'">
             <div class="fila-total">
               <span>Total a cobrar</span>
               <strong>Bs {{ totalVentaOffline() | number:'1.2-2' }}</strong>
@@ -331,13 +366,20 @@
             </div>
           </div>
 
+          <div class="totales-resumen" *ngIf="medioPagoCaja !== 'EFECTIVO'">
+            <div class="fila-total">
+              <span>Total a liquidar</span>
+              <strong>Bs {{ totalVentaOffline() | number:'1.2-2' }}</strong>
+            </div>
+          </div>
+
           <button
             type="button"
             class="cycle-primary btn-cobro"
-            [disabled]="!lineasVentaOffline.length || efectivoRecibido < totalVentaOffline() || procesando"
+            [disabled]="!lineasVentaOffline.length || (medioPagoCaja === 'EFECTIVO' && efectivoRecibido < totalVentaOffline()) || (medioPagoCaja === 'SALDO' && !clienteIdCaja.trim()) || (medioPagoCaja === 'STRIPE_TEST' && !stripePaymentIntentIdCaja.trim()) || procesando"
             (click)="cobrarVentaContado()"
           >
-            {{ procesando ? 'Procesando venta…' : 'Cobrar contado y entregar' }}
+            {{ procesando ? 'Liquidando venta…' : (medioPagoCaja === 'EFECTIVO' ? 'Cobrar contado y entregar' : 'Liquidar y confirmar entrega') }}
           </button>
         </div>
       </section>
@@ -638,33 +680,78 @@
       <div class="checkout">
         <label>
           <span>Método de pago</span>
-          <select [(ngModel)]="metodo">
-            <option value="EFECTIVO">Efectivo</option>
-            <option value="TARJETA_CAJA">Tarjeta en caja</option>
+          <select [(ngModel)]="metodo" (ngModelChange)="calcularTotalesPresenciales()">
+            <option value="EFECTIVO">Efectivo en caja</option>
+            <option value="SALDO">Saldo del cliente</option>
+            <option value="STRIPE_TEST">Tarjeta de prueba (Stripe Test)</option>
+            <option value="TARJETA_CAJA">Tarjeta física en POS</option>
             <option value="QR_CAJA">QR en caja</option>
-            <option value="TRANSFERENCIA">Transferencia</option>
+            <option value="TRANSFERENCIA">Transferencia bancaria</option>
           </select>
         </label>
+
+        <div *ngIf="!reserva && metodo === 'SALDO'" class="presencial-input-campo">
+          <label>
+            <span>Identificador del cliente</span>
+            <input
+              type="text"
+              [(ngModel)]="clienteIdPresencial"
+              placeholder="UUID del cliente para liquidar con saldo"
+            >
+          </label>
+        </div>
+
+        <div *ngIf="!reserva && metodo === 'STRIPE_TEST'" class="presencial-input-campo">
+          <label>
+            <span>Intención de pago capturada (PaymentIntent ID)</span>
+            <input
+              type="text"
+              [(ngModel)]="stripePaymentIntentIdPresencial"
+              placeholder="Ej. pi_test_..."
+            >
+          </label>
+        </div>
+
+        <div *ngIf="!reserva && metodo === 'EFECTIVO'" class="presencial-input-campo">
+          <label>
+            <span>Efectivo recibido en caja (Bs)</span>
+            <input
+              type="number"
+              step="0.50"
+              min="0"
+              [(ngModel)]="efectivoRecibidoPresencial"
+              (ngModelChange)="calcularTotalesPresenciales()"
+              placeholder="0.00"
+            >
+          </label>
+          <p *ngIf="cambioPresencialEstimado > 0" class="cambio-presencial-nota">
+            Cambio estimado a devolver: Bs {{ cambioPresencialEstimado | number:'1.2-2' }}
+          </p>
+        </div>
+
         <button
           type="button"
           class="cycle-primary"
-          [disabled]="!items.length || procesando"
+          [disabled]="!items.length || (metodo === 'SALDO' && !clienteIdPresencial.trim()) || (metodo === 'STRIPE_TEST' && !stripePaymentIntentIdPresencial.trim()) || procesando"
           (click)="vender()"
         >
-          {{ procesando ? 'Registrando…' : 'Cobrar y finalizar' }}
+          {{ procesando ? 'Liquidando…' : 'Cobrar y finalizar' }}
         </button>
       </div>
     </section>
 
-    <!-- Comprobante Reserva -->
+    <!-- Comprobante Reserva / Venta -->
     <section *ngIf="comprobante" class="receipt" aria-live="polite">
       <p class="cycle-kicker">Venta confirmada</p>
       <h2>{{ comprobante.numero }}</h2>
       <p>{{ comprobante.sucursal_nombre }} · {{ comprobante.creada_en | date:'medium' }}</p>
       <div class="receipt-total">
-        <span>Total</span>
+        <span>Total confirmado por servidor</span>
         <strong>Bs {{ comprobante.total | number:'1.2-2' }}</strong>
       </div>
+      <p *ngIf="ventaLiquidada?.cambio_entregado_bob">
+        Cambio entregado: Bs {{ ventaLiquidada?.cambio_entregado_bob | number:'1.2-2' }}
+      </p>
       <p *ngIf="comprobante.adelanto_descontado">
         Adelanto descontado: Bs {{ comprobante.adelanto_descontado | number:'1.2-2' }}
       </p>

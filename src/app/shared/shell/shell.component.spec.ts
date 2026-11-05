@@ -79,6 +79,8 @@ describe('ShellComponent (Navegación y Acceso por Roles)', () => {
       expect(component.puedeVerProductos()).toBeFalse();
       expect(component.puedeVerCaja()).toBeFalse();
       expect(component.puedeVerSucursales()).toBeFalse();
+      expect(component.puedeVerSaldo()).toBeFalse();
+      expect(component.puedeVerReembolsos()).toBeFalse();
     });
   });
 
@@ -107,6 +109,8 @@ describe('ShellComponent (Navegación y Acceso por Roles)', () => {
       expect(component.puedeVerMisPedidos()).toBeTrue();
       expect(component.puedeVerHistorial()).toBeTrue();
       expect(component.puedeVerReservas()).toBeTrue();
+      expect(component.puedeVerSaldo()).toBeTrue();
+      expect(component.puedeVerReembolsos()).toBeTrue();
     });
 
     it('bloquea vistas de operación y administración', () => {

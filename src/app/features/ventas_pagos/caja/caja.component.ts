@@ -14,7 +14,7 @@ import {
 import { AuthService } from '../../identidad_empresas/services/auth.service';
 import { ProductoService } from '../../catalogo/services/producto.service';
 import { Reserva } from '../../reservas_traslados/models/reserva-traslado.models';
-import { Comprobante, ItemVenta, MetodoCaja } from '../models/venta-presencial.models';
+import { Comprobante, ItemVenta, MetodoCaja, VentaLiquidadaDTO, VentaPresencialLiquidarDTO } from '../models/venta-presencial.models';
 import { VarianteDTO } from '../../catalogo/models/catalogo.models';
 import { formatearErrorApi } from '../../../core/utils/error-handler.util';
 
@@ -45,6 +45,13 @@ export class CajaComponent implements OnInit {
   cantidad = 1;
   metodo: MetodoCaja = 'EFECTIVO';
   comprobante?: Comprobante;
+  ventaLiquidada?: VentaLiquidadaDTO;
+  clienteIdPresencial = '';
+  efectivoRecibidoPresencial = 0;
+  saldoAplicadoPresencial?: number;
+  stripePaymentIntentIdPresencial = '';
+  totalPresencialEstimado = 0;
+  cambioPresencialEstimado = 0;
 
   // Modo Turno y Caja Offline
   turnoActivo: TurnoHabilitacion | null = null;
@@ -64,6 +71,9 @@ export class CajaComponent implements OnInit {
   ventasPendientesSync = 0;
   comprobanteOffline?: ComprobanteCajaOffline;
   operacionIdActual: string | null = null;
+  medioPagoCaja: 'EFECTIVO' | 'SALDO' | 'STRIPE_TEST' = 'EFECTIVO';
+  clienteIdCaja = '';
+  stripePaymentIntentIdCaja = '';
 
   // Cierre de Turno y Arqueo
   mostrarDialogoCierre = false;
@@ -317,6 +327,71 @@ export class CajaComponent implements OnInit {
       this.error = 'Agregue al menos una prenda a la venta.';
       return;
     }
+
+    // Liquidación con saldo o tarjeta conectada (CU19)
+    if (this.medioPagoCaja === 'SALDO' || this.medioPagoCaja === 'STRIPE_TEST') {
+      if (!navigator.onLine) {
+        this.error = 'La liquidación con saldo o tarjeta requiere conexión con el servidor central para verificar y capturar los fondos.';
+        return;
+      }
+      if (this.medioPagoCaja === 'SALDO' && !this.clienteIdCaja.trim()) {
+        this.error = 'La liquidación con saldo requiere indicar el identificador del cliente.';
+        return;
+      }
+      if (this.medioPagoCaja === 'STRIPE_TEST' && !this.stripePaymentIntentIdCaja.trim()) {
+        this.error = 'La liquidación con tarjeta requiere el identificador de la intención de pago Stripe capturada.';
+        return;
+      }
+
+      this.procesando = true;
+      const u = this.auth.obtenerUsuarioActual();
+      const sucursalId = u?.sucursal_id || this.turnoActivo.sucursal_id;
+
+      const dto: VentaPresencialLiquidarDTO = {
+        sucursal_id: sucursalId,
+        lineas: this.lineasVentaOffline.map(l => ({
+          variante_id: l.variante_id,
+          cantidad: l.cantidad
+        })),
+        medio_pago: this.medioPagoCaja,
+        cliente_id: this.clienteIdCaja.trim() || undefined,
+        stripe_payment_intent_id: this.medioPagoCaja === 'STRIPE_TEST' ? this.stripePaymentIntentIdCaja.trim() : undefined,
+        turno_caja_id: this.turnoActivo.turno_id
+      };
+
+      this.api.liquidarVentaPresencial(dto).subscribe({
+        next: async resp => {
+          for (const l of this.lineasVentaOffline) {
+            const c = this.turnoActivo!.cupos.find(cupo => cupo.variante_id === l.variante_id);
+            if (c) c.consumido += l.cantidad;
+          }
+          await this.cajaService.guardarTurnoLocal(this.turnoActivo!);
+
+          this.comprobanteOffline = {
+            operacion_id: resp.venta_id,
+            numero: resp.numero,
+            fecha: resp.fecha_hora || new Date().toISOString(),
+            lineas: this.lineasVentaOffline.map(l => ({
+              sku: this.v(l.variante_id),
+              cantidad: l.cantidad,
+              subtotal: l.cantidad * l.precio_bob
+            })),
+            total: Number(resp.total_bob),
+            efectivo: Number(resp.total_bob),
+            cambio: Number(resp.cambio_entregado_bob || 0),
+            esOffline: false
+          };
+          this.limpiarFormularioVentaOffline();
+          this.procesando = false;
+        },
+        error: err => {
+          this.error = this.msg(err);
+          this.procesando = false;
+        }
+      });
+      return;
+    }
+
     const total = this.totalVentaOffline();
     if (this.efectivoRecibido < total) {
       this.error = 'El efectivo recibido es menor al total de la venta.';
@@ -722,6 +797,84 @@ export class CajaComponent implements OnInit {
     if (this.procesando) return;
 
     this.procesando = true;
+
+    // Venta presencial directa en caja conectada (CU19)
+    if (!this.reserva && (this.metodo === 'EFECTIVO' || this.metodo === 'SALDO' || this.metodo === 'STRIPE_TEST')) {
+      if (this.metodo === 'SALDO' && !this.clienteIdPresencial.trim()) {
+        this.error = 'La liquidación con saldo requiere indicar el identificador del cliente.';
+        this.procesando = false;
+        return;
+      }
+      if (this.metodo === 'STRIPE_TEST' && !this.stripePaymentIntentIdPresencial.trim()) {
+        this.error = 'La liquidación con tarjeta requiere el identificador de la intención de pago Stripe capturada.';
+        this.procesando = false;
+        return;
+      }
+
+      const dto: VentaPresencialLiquidarDTO = {
+        sucursal_id: u.sucursal_id,
+        lineas: this.items.map(i => ({
+          variante_id: i.variante_id,
+          cantidad: i.cantidad
+          // No asumir precio ni descuento estático; el backend calcula precios y promociones oficiales
+        })),
+        medio_pago: this.metodo,
+        cliente_id: this.clienteIdPresencial.trim() || undefined,
+        efectivo_recibido_bob: this.metodo === 'EFECTIVO' ? (this.efectivoRecibidoPresencial || undefined) : undefined,
+        saldo_aplicado_bob: this.metodo === 'SALDO' ? this.saldoAplicadoPresencial : undefined,
+        stripe_payment_intent_id: this.metodo === 'STRIPE_TEST' ? this.stripePaymentIntentIdPresencial.trim() : undefined,
+        turno_caja_id: this.turnoActivo?.turno_id
+      };
+
+      this.api.liquidarVentaPresencial(dto).subscribe({
+        next: v => {
+          this.ventaLiquidada = v;
+          this.api.comprobante(v.venta_id).subscribe({
+            next: c => {
+              c.total = Number(v.total_bob);
+              this.comprobante = c;
+              this.procesando = false;
+              this.items = [];
+              this.mensajeExito = `Venta ${v.numero} liquidada exitosamente. Total confirmado por servidor: Bs ${v.total_bob}.`;
+            },
+            error: () => {
+              this.comprobante = {
+                id: v.venta_id,
+                numero: v.numero,
+                sucursal_id: u.sucursal_id || '',
+                canal: 'PRESENCIAL',
+                estado: v.estado_pago || 'PAGADA',
+                subtotal: Number(v.total_bob),
+                descuento: 0,
+                adelanto_descontado: 0,
+                costo_entrega: 0,
+                total: Number(v.total_bob),
+                creada_en: v.fecha_hora || new Date().toISOString(),
+                detalles: [],
+                pagos: [{
+                  id: v.comprobante_id,
+                  contexto: 'VENTA',
+                  venta_id: v.venta_id,
+                  medio_pago: v.medio_pago,
+                  monto: Number(v.total_bob),
+                  no_reembolsable: false,
+                  estado: 'PAGADO'
+                }]
+              };
+              this.procesando = false;
+              this.items = [];
+              this.mensajeExito = `Venta ${v.numero} liquidada exitosamente. Total confirmado por servidor: Bs ${v.total_bob}.`;
+            }
+          });
+        },
+        error: e => {
+          this.error = this.msg(e);
+          this.procesando = false;
+        }
+      });
+      return;
+    }
+
     this.api.registrarVenta({
       reserva_id: this.reserva?.id,
       sucursal_id: u.sucursal_id,
@@ -749,12 +902,31 @@ export class CajaComponent implements OnInit {
     });
   }
 
+  calcularTotalesPresenciales() {
+    const subtotal = this.items.reduce((acc, it) => {
+      const v = this.variantes.find(x => x.id === it.variante_id);
+      const precio = v ? Number(v.precio) : 0;
+      return acc + (precio * it.cantidad);
+    }, 0);
+    this.totalPresencialEstimado = subtotal;
+    if (this.efectivoRecibidoPresencial >= subtotal) {
+      this.cambioPresencialEstimado = Math.round((this.efectivoRecibidoPresencial - subtotal) * 100) / 100;
+    } else {
+      this.cambioPresencialEstimado = 0;
+    }
+  }
+
   nueva() {
     this.reserva = undefined;
     this.comprobante = undefined;
+    this.ventaLiquidada = undefined;
     this.codigo = '';
     this.items = [];
     this.error = '';
+    this.mensajeExito = '';
+    this.clienteIdPresencial = '';
+    this.stripePaymentIntentIdPresencial = '';
+    this.efectivoRecibidoPresencial = 0;
   }
 
   imprimir() {

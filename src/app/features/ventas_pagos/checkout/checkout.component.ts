@@ -1,12 +1,16 @@
 import { Component, OnInit, DestroyRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ReactiveFormsModule, FormGroup, FormControl, Validators } from '@angular/forms';
+import { FormsModule, ReactiveFormsModule, FormGroup, FormControl, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CarritoService } from '../services/carrito.service';
 import { EntregaService } from '../services/entrega.service';
 import { OrganizacionService } from '../../organizacion/services/organizacion.service';
 import { EnriquecimientoService, VarianteEnriquecida } from '../../catalogo/services/enriquecimiento.service';
+import { SincronizacionOfflineService } from '../../../core/services/sincronizacion-offline.service';
+import { OperacionDatosCompra } from '../../../core/services/offline-store.service';
+import { StripeService } from '../services/stripe.service';
+import { obtenerDispositivoId, obtenerHoraBoliviaIso } from '../../../core/utils/bolivia-time.util';
 import { CarritoDTO, CoberturaDTO, CoberturaSucursalDTO, CotizacionDTO, ModalidadEntrega, CheckoutCrearDTO } from '../models/venta-digital.models';
 import { SucursalDTO } from '../../organizacion/models/organizacion.models';
 import { formatearBs, sumarImportes, aNumero, type DecimalApi } from '../../../core/utils/moneda.util';
@@ -17,7 +21,7 @@ type Paso = 'resumen' | 'entrega' | 'confirmacion';
 @Component({
   selector: 'app-checkout',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule, RouterLink],
   templateUrl: './checkout.component.html',
   styleUrls: ['./checkout.component.css']
 })
@@ -46,6 +50,27 @@ export class CheckoutComponent implements OnInit {
   private checkoutKey = crypto.randomUUID();
   private firmaIntentoPrevio: string | null = null;
   private readonly destroyRef = inject(DestroyRef);
+  private readonly sincronizacionService = inject(SincronizacionOfflineService);
+  private readonly stripeService = inject(StripeService);
+
+  autorizoCobroOffline = true;
+  consentimientoCobroV3 = true;
+  metodoPreparadoId: string | null = null;
+  get preparacionPagoId(): string | null {
+    return this.metodoPreparadoId;
+  }
+  set preparacionPagoId(v: string | null) {
+    this.metodoPreparadoId = v;
+  }
+  preparandoMetodo = false;
+  metodoPreparadoExito = false;
+  tasaCambioVigente = '6.96';
+  condicionesVersion = 'v1.0';
+  vigenciaHoras = 24;
+
+  get estaEnLinea(): boolean {
+    return this.sincronizacionService.estaEnLinea;
+  }
 
   constructor(
     private carritoService: CarritoService,
@@ -57,6 +82,16 @@ export class CheckoutComponent implements OnInit {
 
   ngOnInit(): void {
     this.cargarDatos();
+
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const guardado = localStorage.getItem('fs_metodo_preparado_id');
+        if (guardado) {
+          this.metodoPreparadoId = guardado;
+          this.metodoPreparadoExito = true;
+        }
+      }
+    } catch {}
 
     // Reaccionar a cambios en modalidad para ajustar validaciones
     this.checkoutForm.controls.modalidad.valueChanges
@@ -244,6 +279,46 @@ export class CheckoutComponent implements OnInit {
     return true;
   }
 
+  prepararMetodoPago(): void {
+    if (this.preparandoMetodo) return;
+    this.preparandoMetodo = true;
+    this.error = null;
+
+    this.stripeService.prepararMetodo({
+      huella_dispositivo: obtenerDispositivoId()
+    }).subscribe({
+      next: prep => {
+        this.preparandoMetodo = false;
+        this.metodoPreparadoId = prep.preparacion_pago_id;
+        this.metodoPreparadoExito = true;
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            localStorage.setItem('fs_metodo_preparado_id', prep.preparacion_pago_id);
+          }
+        } catch {}
+      },
+      error: e => {
+        this.preparandoMetodo = false;
+        this.error = formatearErrorApi(e, 'No se pudo preparar el método de pago seguro.');
+      }
+    });
+  }
+
+  private generarHuellaSha256(texto: string): string {
+    let h1 = 0xdeadbeef, h2 = 0x41c64e6d;
+    for (let i = 0; i < texto.length; i++) {
+      const ch = texto.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+    h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+    h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    const hex = (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+    return hex.padStart(64, '0');
+  }
+
   confirmarCheckout(): void {
     if (this.procesando || !this.puedeConfirmar) return;
     this.procesando = true;
@@ -253,6 +328,72 @@ export class CheckoutComponent implements OnInit {
     const mod = this.modalidadSeleccionada;
     const dir = this.direccionValor.trim();
     const anillo = this.anilloValor;
+
+    // Manejo de compra fuera de línea (CU05 v3 con autorización de cobro)
+    if (!this.estaEnLinea) {
+      const totalNum = this.totalVisible;
+      const subtotalNum = this.carrito?.subtotal ? aNumero(this.carrito.subtotal) : 0;
+      const descNum = this.carrito?.descuento_total ? aNumero(this.carrito.descuento_total) : 0;
+      const costoEntrega = this.modalidadSeleccionada === 'DELIVERY' && this.cotizacionEsVigente
+        ? (this.cotizacion?.costo_entrega ? aNumero(this.cotizacion.costo_entrega) : 0)
+        : 0;
+
+      const totalBob = totalNum.toFixed(2);
+      const subtotalBob = subtotalNum.toFixed(2);
+      const descBob = descNum.toFixed(2);
+      const envioBob = costoEntrega.toFixed(2);
+      const tasaNum = parseFloat(this.tasaCambioVigente) || 6.96;
+      const importeUsd = (totalNum / tasaNum).toFixed(2);
+      const consentimientoId = crypto.randomUUID();
+      const aceptadoEn = obtenerHoraBoliviaIso();
+      const expiraEn = new Date(Date.now() + this.vigenciaHoras * 3600 * 1000).toISOString();
+      const huellaTexto = `${consentimientoId}:${totalBob}:USD:${this.metodoPreparadoId || ''}`;
+
+      const huellaCompra = this.generarHuellaSha256(huellaTexto);
+      const datosOffline: OperacionDatosCompra = {
+        sucursal_id: sid,
+        modalidad: mod,
+        direccion: mod === 'DELIVERY' ? dir : undefined,
+        anillo_destino: mod === 'DELIVERY' ? (anillo ?? undefined) : undefined,
+        lineas: (this.carrito?.lineas ?? []).map(l => ({
+          variante_id: l.variante_id,
+          cantidad: l.cantidad,
+          precio_visto_bob: aNumero(l.precio_unitario).toFixed(2)
+        })),
+        autorizacion_cobro: {
+          consentimiento: this.consentimientoCobroV3 && this.autorizoCobroOffline,
+          consentimiento_id: consentimientoId,
+          aceptado_local_en: aceptadoEn,
+          huella_compra: huellaCompra,
+          base_bob: subtotalBob,
+          descuento_bob: descBob,
+          envio_bob: envioBob,
+          total_bob: totalBob,
+          moneda_cobro: 'USD',
+          importe_cobro: importeUsd,
+          tasa_id: crypto.randomUUID(),
+          tasa_bob_por_usd: this.tasaCambioVigente,
+          condiciones_version: this.condicionesVersion,
+          vigente_hasta: expiraEn,
+          preparacion_pago_id: this.metodoPreparadoId || undefined,
+          metodo_preparado_id: this.metodoPreparadoId || undefined,
+          huella_dispositivo: obtenerDispositivoId(),
+          permite_cobro_al_reconectar: true
+        }
+      };
+
+      this.sincronizacionService.registrarCompraOffline(datosOffline)
+        .then(() => {
+          this.procesando = false;
+          this.carritoService.vaciar().subscribe({ next: () => {}, error: () => {} });
+          this.router.navigate(['/mis-pedidos']);
+        })
+        .catch(err => {
+          this.error = formatearErrorApi(err, 'No fue posible guardar la compra fuera de línea.');
+          this.procesando = false;
+        });
+      return;
+    }
 
     const dto: CheckoutCrearDTO = {
       sucursal_id: sid,

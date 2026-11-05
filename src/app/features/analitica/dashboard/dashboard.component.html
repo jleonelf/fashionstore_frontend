@@ -133,6 +133,46 @@
       </article>
     </section>
 
+    <!-- DESGLOSE FINANCIERO Y DINERO CAPTURADO (CU23) -->
+    <section class="financial-flow-section" aria-label="Desglose comercial y fondos capturados">
+      <div class="flow-card-grid">
+        <article class="flow-metric-card highlighted">
+          <span class="flow-kicker">Fondos acreditados</span>
+          <p class="flow-label">Dinero capturado</p>
+          <p class="flow-value">{{ dineroCapturado }}</p>
+          <p class="flow-hint">Cobros verificados en pasarela y caja física</p>
+        </article>
+
+        <article class="flow-metric-card">
+          <span class="flow-kicker">Ingresos brutos</span>
+          <p class="flow-label">Ventas brutas</p>
+          <p class="flow-value">{{ ventasBrutas }}</p>
+          <p class="flow-hint">Suma nominal antes de bonificaciones</p>
+        </article>
+
+        <article class="flow-metric-card">
+          <span class="flow-kicker">Bonificaciones</span>
+          <p class="flow-label">Descuentos</p>
+          <p class="flow-value text-muted">- {{ totalDescuentos }}</p>
+          <p class="flow-hint">Ahorro otorgado a clientes en catálogo y campañas</p>
+        </article>
+
+        <article class="flow-metric-card">
+          <span class="flow-kicker">Consolidado</span>
+          <p class="flow-label">Neto comercial</p>
+          <p class="flow-value text-brass">{{ netoComercial }}</p>
+          <p class="flow-hint">Ventas brutas menos bonificaciones y notas</p>
+        </article>
+
+        <article class="flow-metric-card" *ngIf="pedidosPendientesCumplimiento > 0">
+          <span class="flow-kicker">Compromisos</span>
+          <p class="flow-label">En preparación / despacho</p>
+          <p class="flow-value">{{ pedidosPendientesCumplimiento }} pedidos</p>
+          <p class="flow-hint">Monto retenido: {{ montoPedidosPendientes }}</p>
+        </article>
+      </div>
+    </section>
+
     <!-- 2. DINÁMICA COMERCIAL: CONVERSIÓN, PROMOCIONES Y ESTADOS -->
     <section class="dash-triad-grid" aria-label="Indicadores de conversión y flujo comercial">
       <!-- Conversión de reservas (SVG radial accesible) -->

@@ -1,13 +1,102 @@
-export type MetodoCaja = 'EFECTIVO' | 'TARJETA_CAJA' | 'QR_CAJA' | 'TRANSFERENCIA';
+export type MetodoCaja = 'EFECTIVO' | 'TARJETA_CAJA' | 'QR_CAJA' | 'TRANSFERENCIA' | 'SALDO' | 'STRIPE_TEST';
 
-export interface Pago { id: string; contexto: string; reserva_id?: string; venta_id?: string; metodo: string; tipo_pago?: string; modalidad_adelanto?: string; monto: number; no_reembolsable: boolean; estado: string; pagado_en?: string; }
+export type MedioPagoPresencial = 'EFECTIVO' | 'SALDO' | 'STRIPE_TEST' | 'TARJETA_CAJA' | 'QR_CAJA' | 'TRANSFERENCIA';
 
-export interface ItemVenta { detalle_reserva_id?: string; variante_id: string; cantidad: number; }
+export interface LineaVentaPresencialDTO {
+  variante_id: string;
+  cantidad: number;
+  precio_unitario_bob?: number;
+  descuento_bob?: number;
+}
 
-export interface VentaCrear { reserva_id?: string; sucursal_id: string; cliente_id?: string; metodo: MetodoCaja; items: ItemVenta[]; }
+export interface VentaPresencialLiquidarDTO {
+  sucursal_id: string;
+  lineas: LineaVentaPresencialDTO[];
+  medio_pago: MedioPagoPresencial;
+  efectivo_recibido_bob?: number;
+  saldo_aplicado_bob?: number;
+  stripe_payment_intent_id?: string;
+  cliente_id?: string;
+  turno_caja_id?: string;
+  reserva_id?: string;
+}
 
-export interface DetalleVenta { id: string; detalle_reserva_id?: string; variante_id: string; cantidad: number; precio_unitario: number; descuento: number; costo_promedio?: number; }
+export interface VentaLiquidadaDTO {
+  venta_id: string;
+  numero: string;
+  total_bob: number;
+  comprobante_id: string;
+  kardex_ids?: string[];
+  medio_pago: string;
+  cambio_entregado_bob?: number;
+  cambio_bob?: number;
+  estado_pago?: string;
+  estado_entrega?: string;
+  cliente_id?: string;
+  fecha_hora?: string;
+}
 
-export interface Venta { id: string; numero: string; cliente_id?: string; reserva_id?: string; sucursal_id: string; cajero_id?: string; canal: string; estado: string; subtotal: number; descuento: number; adelanto_descontado: number; costo_entrega: number; total: number; creada_en: string; confirmada_en?: string; detalles: DetalleVenta[]; }
+export interface Pago {
+  id: string;
+  contexto: string;
+  reserva_id?: string;
+  venta_id?: string;
+  medio_pago?: string;
+  metodo?: string;
+  tipo_pago?: string;
+  modalidad_adelanto?: string;
+  monto: number;
+  no_reembolsable: boolean;
+  estado: string;
+  pagado_en?: string;
+}
 
-export interface Comprobante extends Venta { reserva_codigo?: string; sucursal_nombre?: string; cajero_nombre?: string; pagos: Pago[]; }
+export interface ItemVenta {
+  detalle_reserva_id?: string;
+  variante_id: string;
+  cantidad: number;
+}
+
+export interface VentaCrear {
+  reserva_id?: string;
+  sucursal_id: string;
+  cliente_id?: string;
+  metodo: MetodoCaja;
+  items: ItemVenta[];
+}
+
+export interface DetalleVenta {
+  id: string;
+  detalle_reserva_id?: string;
+  variante_id: string;
+  cantidad: number;
+  precio_unitario: number;
+  descuento: number;
+  costo_promedio?: number;
+}
+
+export interface Venta {
+  id: string;
+  numero: string;
+  cliente_id?: string;
+  reserva_id?: string;
+  sucursal_id: string;
+  cajero_id?: string;
+  canal: string;
+  estado: string;
+  subtotal: number;
+  descuento: number;
+  adelanto_descontado: number;
+  costo_entrega: number;
+  total: number;
+  creada_en: string;
+  confirmada_en?: string;
+  detalles: DetalleVenta[];
+}
+
+export interface Comprobante extends Venta {
+  reserva_codigo?: string;
+  sucursal_nombre?: string;
+  cajero_nombre?: string;
+  pagos: Pago[];
+}

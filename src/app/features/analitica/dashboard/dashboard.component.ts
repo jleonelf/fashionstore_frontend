@@ -258,4 +258,38 @@ export class DashboardComponent implements OnInit {
     const tasa = this.num(this.dashboard?.conversion_reservas.tasa);
     return Math.round(tasa * 1000) / 10;
   }
+
+  // --- Desglose comercial y dinero capturado E2 (CU23) ---
+
+  get dineroCapturado(): string {
+    return this.bs(this.dashboard?.dinero_capturado ?? this.dashboard?.ingresos_total);
+  }
+
+  get ventasBrutas(): string {
+    return this.bs(this.dashboard?.ventas_brutas ?? this.dashboard?.ingresos_total);
+  }
+
+  get totalDescuentos(): string {
+    return this.bs(this.dashboard?.descuentos ?? '0.00');
+  }
+
+  get totalDevoluciones(): string {
+    return this.bs(this.dashboard?.devoluciones ?? '0.00');
+  }
+
+  get totalReembolsos(): string {
+    return this.bs(this.dashboard?.reembolsos ?? '0.00');
+  }
+
+  get netoComercial(): string {
+    return this.bs(this.dashboard?.neto_comercial ?? this.dashboard?.ingresos_total);
+  }
+
+  get pedidosPendientesCumplimiento(): number {
+    return this.dashboard?.pedidos_pendientes_cumplimiento ?? 0;
+  }
+
+  get montoPedidosPendientes(): string {
+    return this.bs(this.dashboard?.monto_pedidos_pendientes ?? '0.00');
+  }
 }

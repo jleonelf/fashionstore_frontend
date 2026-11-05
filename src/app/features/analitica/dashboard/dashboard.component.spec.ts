@@ -329,5 +329,31 @@ describe('DashboardComponent (Mesa de corte analítica y visualizaciones nativas
       const fields = compiled.querySelectorAll('.filter-field');
       expect(fields.length).toBeGreaterThanOrEqual(2);
     });
+
+    it('presenta el desglose del flujo financiero comercial (CU23): dinero capturado y neto comercial', () => {
+      component.dashboard = {
+        ...mockDashboardReal,
+        ventas_brutas: 15000,
+        descuentos: 1200,
+        devoluciones: 800,
+        reembolsos: 500,
+        neto_comercial: 12500,
+        dinero_capturado: 14500,
+        pedidos_pendientes_cumplimiento: 3,
+        monto_pedidos_pendientes: 1800
+      };
+      fixture.detectChanges();
+
+      expect(component.dineroCapturado).toContain('14.500');
+      expect(component.netoComercial).toContain('12.500');
+      expect(component.ventasBrutas).toContain('15.000');
+      expect(component.pedidosPendientesCumplimiento).toBe(3);
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.textContent).toContain('Dinero capturado');
+      expect(compiled.textContent).toContain('Neto comercial');
+      expect(compiled.textContent).toContain('Ventas brutas');
+      expect(compiled.textContent).toContain('En preparación / despacho');
+    });
   });
 });

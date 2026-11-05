@@ -72,6 +72,20 @@ export const routes: Routes = [
     data: { roles: ['CLIENTE', 'ADMINISTRADOR', 'ENCARGADO'] },
     title: 'Reservas — FashionStore'
   },
+  {
+    path: 'mi-saldo',
+    loadComponent: () => import('./features/posventa/saldo/saldo.component').then(m => m.SaldoComponent),
+    canActivate: [authGuard],
+    data: { roles: ['CLIENTE'] },
+    title: 'Mi saldo a favor — FashionStore'
+  },
+  {
+    path: 'reembolsos',
+    loadComponent: () => import('./features/posventa/reembolsos/reembolsos.component').then(m => m.ReembolsosComponent),
+    canActivate: [authGuard],
+    data: { roles: ['CLIENTE', 'ADMINISTRADOR', 'ENCARGADO'] },
+    title: 'Reembolsos — FashionStore'
+  },
   // Operativo — Cola de pedidos
   {
     path: 'pedidos',
