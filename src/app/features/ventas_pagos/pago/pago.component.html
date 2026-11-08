@@ -26,7 +26,39 @@
       <div *ngIf="esPendiente" class="stripe-section">
         <p class="stripe-info">Introduce los datos de tu tarjeta de prueba</p>
         <div id="stripe-card-element" class="stripe-element-container"></div>
+
+        <!-- Alerta de 3DS / Acción Requerida -->
+        <div *ngIf="requiereAccion3DS" class="cycle-alert warning action-required-box" role="alert">
+          <div class="action-required-content">
+            <span class="action-icon" aria-hidden="true">🛡️</span>
+            <div>
+              <strong>Autenticación bancaria requerida (3D Secure)</strong>
+              <p>Tu banco requiere validar tu identidad para autorizar este pago de forma segura.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="cycle-primary btn-accion-3ds"
+            (click)="continuarAccion3DS()"
+            [disabled]="procesando3DS"
+          >
+            {{ procesando3DS ? 'Validando con el banco…' : 'Continuar validación bancaria' }}
+          </button>
+        </div>
+
+        <div *ngIf="!requiereAccion3DS" class="guardar-metodo-fila">
+          <label class="guardar-metodo-label">
+            <input
+              type="checkbox"
+              [checked]="guardarMetodo"
+              (change)="guardarMetodo = $any($event.target).checked"
+            >
+            <span>Guardar este método de pago preparado para compras futuras y fuera de línea</span>
+          </label>
+        </div>
+
         <button
+          *ngIf="!requiereAccion3DS"
           type="button"
           class="cycle-primary btn-pagar"
           (click)="confirmarPago()"

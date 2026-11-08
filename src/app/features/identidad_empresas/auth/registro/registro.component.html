@@ -23,8 +23,8 @@
         <p>Unite para reservar y probar con IA.</p>
       </div>
 
-      <div *ngIf="mensajeError" class="alert-box alert-danger">{{ mensajeError }}</div>
-      <div *ngIf="mensajeExito" class="alert-box alert-success">{{ mensajeExito }}</div>
+      <div *ngIf="mensajeError" class="alert-box alert-danger" role="alert">{{ mensajeError }}</div>
+      <div *ngIf="mensajeExito" class="alert-box alert-success" role="status">{{ mensajeExito }}</div>
 
       <form (ngSubmit)="registrarCliente()" novalidate>
         <div class="form-row">
@@ -96,12 +96,28 @@
           <label for="direccion">Dirección de referencia</label>
           <input id="direccion" name="direccion" [(ngModel)]="datosRegistro.direccion_referencia" placeholder="Av. San Martín 3er Anillo" />
         </div>
+        <div class="form-group">
+          <label for="regEmpresa">Código de empresa *</label>
+          <input
+            id="regEmpresa"
+            name="regEmpresa"
+            [(ngModel)]="datosRegistro.empresa_codigo"
+            (input)="limpiarErrorCampo('empresa_codigo')"
+            [class.has-error]="erroresCampos['empresa_codigo']"
+            placeholder="ej. boutique_central"
+            required
+          />
+          <span *ngIf="erroresCampos['empresa_codigo']" class="field-error" role="alert">{{ erroresCampos['empresa_codigo'] }}</span>
+          <small class="field-help" style="font-size: 0.75rem; color: #64748b; margin-top: 0.25rem; display: block;">
+            Ingresa el identificador de la boutique o empresa contratante en la que te registras.
+          </small>
+        </div>
         <button type="submit" class="btn-primary" [disabled]="cargando"><span *ngIf="!cargando">Crear cuenta de cliente</span><span *ngIf="cargando">Procesando…</span></button>
       </form>
 
       <div class="auth-footer">
         <span>¿Ya tenés cuenta?</span>
-        <a routerLink="/auth/login" class="link-action">Iniciar sesión →</a>
+        <a [routerLink]="['/auth/login']" [queryParams]="datosRegistro.empresa_codigo ? { empresa: datosRegistro.empresa_codigo } : {}" class="link-action">Iniciar sesión →</a>
         <a routerLink="/" class="link-muted">← Explorar catálogo sin registro</a>
       </div>
     </div>

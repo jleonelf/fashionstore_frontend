@@ -13,7 +13,7 @@ describe('UsuariosComponent', () => {
   let organizacionServiceSpy: jasmine.SpyObj<OrganizacionService>;
 
   const mockRoles: RolDTO[] = [
-    { id: 'rol-1', nombre: 'ADMIN', activo: true, creado_en: '2026-01-01T00:00:00Z' },
+    { id: 'rol-1', nombre: 'ADMINISTRADOR', activo: true, creado_en: '2026-01-01T00:00:00Z' },
     { id: 'rol-2', nombre: 'ENCARGADO', activo: true, creado_en: '2026-01-01T00:00:00Z' },
     { id: 'rol-3', nombre: 'CAJERO', activo: true, creado_en: '2026-01-01T00:00:00Z' }
   ];
@@ -59,7 +59,8 @@ describe('UsuariosComponent', () => {
       'gestionarUsuarios',
       'crearUsuario',
       'asignarRol',
-      'actualizarEstadoUsuario'
+      'actualizarEstadoUsuario',
+      'actualizarUsuario'
     ]);
     organizacionServiceSpy = jasmine.createSpyObj<OrganizacionService>('OrganizacionService', [
       'gestionarSucursales'
@@ -95,7 +96,7 @@ describe('UsuariosComponent', () => {
 
   it('abre el diálogo de cambio de rol y confirma la actualización', fakeAsync(() => {
     usuarioServiceSpy.asignarRol.and.returnValue(
-      of({ ...mockUsuarios[0], rol_id: 'rol-1', rol_nombre: 'ADMIN' })
+      of({ ...mockUsuarios[0], rol_id: 'rol-1', rol_nombre: 'ADMINISTRADOR' })
     );
 
     component.cambiarRol(mockUsuarios[0]);
@@ -146,6 +147,27 @@ describe('UsuariosComponent', () => {
     expect(component.usuarioCambioEstado).toBeNull();
   }));
 
+  it('abre el diálogo de edición completa y guarda los cambios', fakeAsync(() => {
+    usuarioServiceSpy.actualizarUsuario.and.returnValue(
+      of({ ...mockUsuarios[0], nombres: 'Carlos Alberto', nombre_completo: 'Carlos Alberto Mendoza' })
+    );
+
+    component.editarUsuario(mockUsuarios[0]);
+    tick(60);
+    fixture.detectChanges();
+
+    expect(component.usuarioEditando).toEqual(mockUsuarios[0]);
+    expect(component.datosEdicion.nombres).toBe('Carlos');
+
+    component.datosEdicion.nombres = 'Carlos Alberto';
+    component.guardarEdicion();
+    tick();
+    flush();
+
+    expect(usuarioServiceSpy.actualizarUsuario).toHaveBeenCalled();
+    expect(component.usuarioEditando).toBeNull();
+  }));
+
   it('no produce scroll horizontal forzado en anchos 360, 390, 440, 768, 1024 y 1440 px', () => {
     const anchos = [360, 390, 440, 768, 1024, 1440];
     const host = fixture.nativeElement as HTMLElement;
@@ -160,4 +182,3 @@ describe('UsuariosComponent', () => {
     });
   });
 });
-

@@ -1,5 +1,6 @@
 import { Component, OnInit, OnDestroy, DestroyRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { StripeService } from '../services/stripe.service';
@@ -12,7 +13,7 @@ import { formatearErrorApi } from '../../../core/utils/error-handler.util';
 @Component({
   selector: 'app-pago',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './pago.component.html',
   styleUrls: ['./pago.component.css']
 })
@@ -26,6 +27,9 @@ export class PagoComponent implements OnInit, OnDestroy {
   error: string | null = null;
   exito: string | null = null;
   avisoTimeout = false;
+  requiereAccion3DS = false;
+  procesando3DS = false;
+  guardarMetodo = false;
 
   private stripe: unknown = null;
   private elements: unknown = null;
@@ -148,9 +152,13 @@ export class PagoComponent implements OnInit, OnDestroy {
     if (this.procesandoPago || !this.stripe || !this.cardElement || !this.intencion?.client_secret) return;
     this.procesandoPago = true;
     this.error = null;
+    this.requiereAccion3DS = false;
 
     const s = this.stripe as {
-      confirmCardPayment: (cs: string, data: unknown) => Promise<{ error?: { message: string } }>;
+      confirmCardPayment: (cs: string, data: unknown) => Promise<{
+        error?: { message: string; code?: string };
+        paymentIntent?: { status: string; id: string };
+      }>;
     };
 
     s.confirmCardPayment(this.intencion.client_secret, {
@@ -158,8 +166,28 @@ export class PagoComponent implements OnInit, OnDestroy {
     }).then(result => {
       this.procesandoPago = false;
       if (result.error) {
-        this.error = result.error.message ?? 'El pago fue rechazado por la pasarela.';
+        if (result.error.code === 'authentication_required' || result.error.code === 'requires_action') {
+          this.requiereAccion3DS = true;
+          this.error = 'Tu entidad financiera requiere validación de identidad (3D-Secure). Pulsa el botón inferior para continuar.';
+        } else {
+          this.error = result.error.message ?? 'El pago fue rechazado por la pasarela.';
+        }
+      } else if (result.paymentIntent?.status === 'requires_action') {
+        this.requiereAccion3DS = true;
       } else {
+        // Preparar método si el cliente dio su consentimiento para compras futuras y offline (v3)
+        if (this.guardarMetodo) {
+          this.stripeService.prepararMetodo().subscribe({
+            next: prep => {
+              try {
+                if (typeof window !== 'undefined' && window.localStorage) {
+                  localStorage.setItem('fs_metodo_preparado_id', prep.preparacion_pago_id);
+                }
+              } catch {}
+            },
+            error: () => {}
+          });
+        }
         // Se inicia polling para consultar la confirmación definitiva en backend
         this.iniciarPolling();
       }
@@ -167,6 +195,37 @@ export class PagoComponent implements OnInit, OnDestroy {
       this.error = 'Ocurrió un error inesperado al procesar el pago.';
       this.procesandoPago = false;
     });
+  }
+
+  continuarAccion3DS(): void {
+    if (!this.stripe || !this.intencion?.client_secret || this.procesando3DS) return;
+    this.procesando3DS = true;
+    this.error = null;
+
+    const s = this.stripe as {
+      handleCardAction: (cs: string) => Promise<{
+        error?: { message: string };
+        paymentIntent?: { status: string };
+      }>;
+    };
+
+    if (typeof s.handleCardAction === 'function') {
+      s.handleCardAction(this.intencion.client_secret).then(res => {
+        this.procesando3DS = false;
+        if (res.error) {
+          this.error = res.error.message || 'La verificación bancaria no fue completada con éxito.';
+        } else {
+          this.requiereAccion3DS = false;
+          this.iniciarPolling();
+        }
+      }).catch(() => {
+        this.procesando3DS = false;
+        this.error = 'No fue posible continuar la autenticación bancaria. Puedes reintentar.';
+      });
+    } else {
+      this.procesando3DS = false;
+      this.iniciarPolling();
+    }
   }
 
   reintentar(): void {

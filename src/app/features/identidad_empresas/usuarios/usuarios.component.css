@@ -715,3 +715,8 @@ tr:hover td {
 .chip-icon {
   font-weight: 700;
 }
+
+.dialog-card-wide {
+  width: min(580px, 100%) !important;
+  max-width: 580px;
+}

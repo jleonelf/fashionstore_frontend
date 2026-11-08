@@ -1,10 +1,11 @@
 import { Routes } from '@angular/router';
-import { authGuard } from './core/guards/auth.guard';
+import { authGuard, platformHomeGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
   {
     path: '',
     loadComponent: () => import('./features/experiencia_cliente/landing/landing.component').then(m => m.LandingComponent),
+    canActivate: [platformHomeGuard],
     title: 'FashionStore — La ropa se prueba. La ciudad te la acerca.'
   },
   {
@@ -72,6 +73,20 @@ export const routes: Routes = [
     data: { roles: ['CLIENTE', 'ADMINISTRADOR', 'ENCARGADO'] },
     title: 'Reservas — FashionStore'
   },
+  {
+    path: 'mi-saldo',
+    loadComponent: () => import('./features/posventa/saldo/saldo.component').then(m => m.SaldoComponent),
+    canActivate: [authGuard],
+    data: { roles: ['CLIENTE'] },
+    title: 'Mi saldo a favor — FashionStore'
+  },
+  {
+    path: 'reembolsos',
+    loadComponent: () => import('./features/posventa/reembolsos/reembolsos.component').then(m => m.ReembolsosComponent),
+    canActivate: [authGuard],
+    data: { roles: ['CLIENTE', 'ADMINISTRADOR', 'ENCARGADO'] },
+    title: 'Reembolsos — FashionStore'
+  },
   // Operativo — Cola de pedidos
   {
     path: 'pedidos',
@@ -101,6 +116,20 @@ export const routes: Routes = [
     canActivate: [authGuard],
     data: { roles: ['ADMINISTRADOR', 'ENCARGADO'] },
     title: 'Inteligencia — FashionStore'
+  },
+  {
+    path: 'plataforma',
+    loadComponent: () => import('./features/identidad_empresas/empresas/empresas.component').then(m => m.EmpresasComponent),
+    canActivate: [authGuard],
+    data: { roles: ['SUPERADMIN', 'ADMINISTRADOR_PLATAFORMA', 'ADMINISTRADOR_SISTEMA'] },
+    title: 'Panel de plataforma — FashionStore'
+  },
+  {
+    path: 'empresas',
+    loadComponent: () => import('./features/identidad_empresas/empresas/empresas.component').then(m => m.EmpresasComponent),
+    canActivate: [authGuard],
+    data: { roles: ['SUPERADMIN', 'ADMINISTRADOR_PLATAFORMA', 'ADMINISTRADOR_SISTEMA'] },
+    title: 'Empresas — FashionStore'
   },
   {
     path: 'usuarios',

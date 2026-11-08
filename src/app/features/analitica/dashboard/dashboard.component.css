@@ -714,3 +714,63 @@
     animation: none;
   }
 }
+
+/* Desglose Financiero y Dinero Capturado (CU23) */
+.financial-flow-section {
+  margin-bottom: 1.5rem;
+  width: 100%;
+}
+
+.flow-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.flow-metric-card {
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border, #e4e1dc);
+  border-radius: var(--radius-card, 14px);
+  padding: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-card, 0 1px 2px rgba(23, 32, 42, .04));
+  min-width: 0;
+}
+
+.flow-metric-card.highlighted {
+  border-left: 3px solid var(--ink, #17202a);
+  background: linear-gradient(180deg, var(--surface, #ffffff) 0%, rgba(168, 135, 91, 0.04) 100%);
+}
+
+.flow-kicker {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted, #667085);
+  margin-bottom: 0.35rem;
+}
+
+.flow-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ink, #17202a);
+  margin: 0 0 0.4rem;
+}
+
+.flow-value {
+  font-size: clamp(1.25rem, 2.5vw, 1.55rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--ink, #17202a);
+  margin: 0 0 0.3rem;
+}
+
+.flow-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted, #667085);
+  line-height: 1.35;
+  margin: 0;
+}

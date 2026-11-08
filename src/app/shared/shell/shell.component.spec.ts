@@ -79,6 +79,8 @@ describe('ShellComponent (Navegación y Acceso por Roles)', () => {
       expect(component.puedeVerProductos()).toBeFalse();
       expect(component.puedeVerCaja()).toBeFalse();
       expect(component.puedeVerSucursales()).toBeFalse();
+      expect(component.puedeVerSaldo()).toBeFalse();
+      expect(component.puedeVerReembolsos()).toBeFalse();
     });
   });
 
@@ -107,6 +109,8 @@ describe('ShellComponent (Navegación y Acceso por Roles)', () => {
       expect(component.puedeVerMisPedidos()).toBeTrue();
       expect(component.puedeVerHistorial()).toBeTrue();
       expect(component.puedeVerReservas()).toBeTrue();
+      expect(component.puedeVerSaldo()).toBeTrue();
+      expect(component.puedeVerReembolsos()).toBeTrue();
     });
 
     it('bloquea vistas de operación y administración', () => {
@@ -219,6 +223,21 @@ describe('ShellComponent (Navegación y Acceso por Roles)', () => {
       expect(component.puedeVerOperaciones()).toBeTrue();
       expect(component.puedeVerTraslados()).toBeTrue();
     });
+  });
+
+  it('muestra al SUPERADMIN el panel de plataforma sin navegación de tienda', () => {
+    usuarioSubject.next({
+      id: 'super-1', usuario_id: 'super-1', nombres: 'Super', apellidos: 'Admin',
+      nombre_completo: 'Super Admin', correo_electronico: 'super@example.com',
+      rol: 'SUPERADMIN', estado: 'ACTIVO', preferencias: {}, creado_en: '2026-01-01', empresa_id: null
+    });
+    fixture.detectChanges();
+
+    expect(component.esPlataforma()).toBeTrue();
+    expect(component.esAdmin()).toBeFalse();
+    expect(component.puedeVerCaja()).toBeFalse();
+    expect(fixture.nativeElement.querySelector('a[href="/plataforma"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('a[href="/caja"]')).toBeNull();
   });
 
   describe('Control de Menú Móvil y Teclado', () => {

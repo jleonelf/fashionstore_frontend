@@ -9,6 +9,8 @@ import { ProductoService } from '../services/producto.service';
 import { CarritoService } from '../../ventas_pagos/services/carrito.service';
 import { AuthService } from '../../identidad_empresas/services/auth.service';
 import { IAService } from '../../experiencia_cliente/services/ia.service';
+import { SincronizacionOfflineService } from '../../../core/services/sincronizacion-offline.service';
+import { OfflineStoreService, CatalogoSnapshot } from '../../../core/services/offline-store.service';
 import { formatearErrorApi } from '../../../core/utils/error-handler.util';
 import {
   bloquearScrollBody,
@@ -19,6 +21,7 @@ import {
 } from '../../../core/utils/modal-accessibility.util';
 import { ProductoDTO, TallaDTO, ColorDTO, CategoriaDTO, TemporadaDTO, ColeccionDTO, DisponibilidadItem, VarianteDTO } from '../models/catalogo.models';
 import { RecomendacionItemDTO } from '../../experiencia_cliente/models/ia-cliente.models';
+import { formatearFechaBolivia, obtenerHoraBoliviaIso } from '../../../core/utils/bolivia-time.util';
 
 @Component({
   selector: 'app-catalogo',
@@ -61,6 +64,14 @@ export class CatalogoComponent implements OnInit, OnDestroy {
   mensajeError: string | null = null;
   filtrosAbiertos = true;
 
+  // Estado fuera de línea y copia local (descarga de catalogo / consulta catalogo offline)
+  esModoCopiaLocal = false;
+  sinCopiaLocal = false;
+  snapshotLocal: CatalogoSnapshot | null = null;
+  descargandoCopia = false;
+  mensajeDescarga: string | null = null;
+  errorDescarga: string | null = null;
+
   // Modal y selección de producto / variantes
   productoSeleccionado: ProductoDTO | null = null;
   variantesProducto: VarianteDTO[] = [];
@@ -71,6 +82,11 @@ export class CatalogoComponent implements OnInit, OnDestroy {
   agregandoAlCarrito = false;
   mensajeCarritoExito: string | null = null;
   mensajeCarritoError: string | null = null;
+
+  // Reserva fuera de línea desde el modal (reserva offline)
+  guardandoReservaOffline = false;
+  mensajeReservaOffline: string | null = null;
+  errorReservaOffline: string | null = null;
 
   // Disponibilidad por sucursal
   disponibilidad: DisponibilidadItem[] = [];
@@ -99,17 +115,33 @@ export class CatalogoComponent implements OnInit, OnDestroy {
     private productoService: ProductoService,
     public carritoService: CarritoService,
     public authService: AuthService,
+    public syncOfflineService: SincronizacionOfflineService,
+    private offlineStore: OfflineStoreService,
     private router: Router,
     private iaService: IAService
   ) {}
 
   ngOnInit(): void {
     this.cargarMaestros();
-    this.filtrar();
+    this.cargarMetadataSnapshotLocal();
+
+    // Monitorear estado de red
+    this.syncOfflineService.enLinea$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(enLinea => {
+      if (!enLinea && !this.esModoCopiaLocal) {
+        this.filtrarLocalmente();
+      }
+    });
+
+    if (this.syncOfflineService.estaEnLinea) {
+      this.filtrar();
+    } else {
+      this.filtrarLocalmente();
+    }
+
     if (typeof window !== 'undefined' && window.innerWidth < 900) {
       this.filtrosAbiertos = false;
     }
-    if (this.esCliente()) {
+    if (this.esCliente() && this.syncOfflineService.estaEnLinea) {
       this.cargarRecomendaciones();
     }
   }
@@ -148,16 +180,47 @@ export class CatalogoComponent implements OnInit, OnDestroy {
   }
 
   cargarMaestros(): void {
-    this.maestroService.gestionarTallas().pipe(takeUntilDestroyed(this.destroyRef)).subscribe(d => this.tallas = d);
-    this.maestroService.gestionarColores().pipe(takeUntilDestroyed(this.destroyRef)).subscribe(d => this.colores = d);
-    this.maestroService.gestionarCategorias().pipe(takeUntilDestroyed(this.destroyRef)).subscribe(d => this.categorias = d);
-    this.maestroService.gestionarTemporadas().pipe(takeUntilDestroyed(this.destroyRef)).subscribe(d => this.temporadas = d);
-    this.maestroService.gestionarColecciones().pipe(takeUntilDestroyed(this.destroyRef)).subscribe(d => this.colecciones = d);
+    this.maestroService.gestionarTallas().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: d => this.tallas = d,
+      error: () => {}
+    });
+    this.maestroService.gestionarColores().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: d => this.colores = d,
+      error: () => {}
+    });
+    this.maestroService.gestionarCategorias().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: d => this.categorias = d,
+      error: () => {}
+    });
+    this.maestroService.gestionarTemporadas().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: d => this.temporadas = d,
+      error: () => {}
+    });
+    this.maestroService.gestionarColecciones().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: d => this.colecciones = d,
+      error: () => {}
+    });
   }
 
+  async cargarMetadataSnapshotLocal(): Promise<void> {
+    const empresaId = this.authService.obtenerEmpresaId();
+    this.snapshotLocal = await this.offlineStore.obtenerSnapshot(empresaId);
+  }
+
+  // ==========================================
+  // CONSULTA Y FILTRADO (consulta catalogo offline)
+  // ==========================================
+
   filtrar(): void {
+    if (!this.syncOfflineService.estaEnLinea) {
+      this.filtrarLocalmente();
+      return;
+    }
+
     this.cargando = true;
     this.mensajeError = null;
+    this.sinCopiaLocal = false;
+
     const params: Record<string, string | number> = {};
     if (this.filtros.texto) params['texto'] = this.filtros.texto;
     if (this.filtros.categoria_id) params['categoria_id'] = this.filtros.categoria_id;
@@ -172,11 +235,94 @@ export class CatalogoComponent implements OnInit, OnDestroy {
     this.catalogoService.consultarCatalogo(params).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (d) => {
         this.productos = d;
+        this.esModoCopiaLocal = false;
+        this.sinCopiaLocal = false;
         this.cargando = false;
       },
       error: (err) => {
-        this.mensajeError = formatearErrorApi(err, 'No se pudo consultar el catálogo.');
-        this.cargando = false;
+        // Si la conexión falla (0 o desconexión), consultar la copia local en IndexedDB
+        if (err.status === 0 || !navigator.onLine) {
+          this.filtrarLocalmente();
+        } else {
+          this.mensajeError = formatearErrorApi(err, 'No se pudo consultar el catálogo en línea.');
+          this.cargando = false;
+        }
+      }
+    });
+  }
+
+  async filtrarLocalmente(): Promise<void> {
+    this.cargando = true;
+    this.mensajeError = null;
+
+    const params = {
+      texto: this.filtros.texto,
+      categoria_id: this.filtros.categoria_id,
+      talla_id: this.filtros.talla_id,
+      color_id: this.filtros.color_id,
+      temporada_id: this.filtros.temporada_id,
+      coleccion_id: this.filtros.coleccion_id,
+      precio_min: this.filtros.precio_min ? Number(this.filtros.precio_min) : undefined,
+      precio_max: this.filtros.precio_max ? Number(this.filtros.precio_max) : undefined,
+      genero: this.filtros.genero
+    };
+
+    const empresaId = this.authService.obtenerEmpresaId();
+
+    try {
+      const res = await this.catalogoService.consultarCatalogoLocal(params, empresaId);
+      this.cargando = false;
+
+      if (res.snapshot && res.snapshot.valido) {
+        this.productos = res.productos;
+        this.snapshotLocal = res.snapshot;
+        this.esModoCopiaLocal = true;
+        this.sinCopiaLocal = false;
+        // Si no se habían cargado los maestros por falta de red, recuperarlos desde el snapshot
+        if (this.colores.length === 0 && res.snapshot.colores) {
+          this.colores = res.snapshot.colores.map(c => ({ id: c.id, nombre: c.nombre, codigo_hex: c.codigo_hex, activo: true }));
+        }
+      } else {
+        this.productos = [];
+        this.esModoCopiaLocal = false;
+        this.sinCopiaLocal = true;
+      }
+    } catch {
+      this.cargando = false;
+      this.productos = [];
+      this.sinCopiaLocal = true;
+    }
+  }
+
+  // ==========================================
+  // DESCARGA DE CATÁLOGO (descarga de catalogo)
+  // ==========================================
+
+  descargarCopiaLocal(): void {
+    if (!this.syncOfflineService.estaEnLinea) {
+      this.errorDescarga = 'Se requiere conexión a internet para descargar la copia local del catálogo.';
+      return;
+    }
+
+    this.descargandoCopia = true;
+    this.mensajeDescarga = null;
+    this.errorDescarga = null;
+
+    const empresaCodigo = this.authService.obtenerEmpresaCodigo();
+
+    this.catalogoService.sincronizarSnapshotLocal(empresaCodigo).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (snapshotGuardado) => {
+        this.descargandoCopia = false;
+        this.snapshotLocal = snapshotGuardado;
+        this.sinCopiaLocal = false;
+        this.mensajeDescarga = `Catálogo guardado localmente (Versión ${snapshotGuardado.catalogo_version}, ${snapshotGuardado.total_productos} prendas).`;
+        if (this.esModoCopiaLocal) {
+          this.filtrarLocalmente();
+        }
+      },
+      error: (err) => {
+        this.descargandoCopia = false;
+        this.errorDescarga = formatearErrorApi(err, 'No se pudo descargar la copia local del catálogo.');
       }
     });
   }
@@ -193,22 +339,26 @@ export class CatalogoComponent implements OnInit, OnDestroy {
       precio_max: '',
       genero: ''
     };
-    this.filtrar();
+    if (this.esModoCopiaLocal) {
+      this.filtrarLocalmente();
+    } else {
+      this.filtrar();
+    }
   }
 
   seleccionarTalla(id: string): void {
     this.filtros.talla_id = this.filtros.talla_id === id ? '' : id;
-    this.filtrar();
+    if (this.esModoCopiaLocal) this.filtrarLocalmente(); else this.filtrar();
   }
 
   seleccionarColor(id: string): void {
     this.filtros.color_id = this.filtros.color_id === id ? '' : id;
-    this.filtrar();
+    if (this.esModoCopiaLocal) this.filtrarLocalmente(); else this.filtrar();
   }
 
   seleccionarGenero(g: string): void {
     this.filtros.genero = this.filtros.genero === g ? '' : g;
-    this.filtrar();
+    if (this.esModoCopiaLocal) this.filtrarLocalmente(); else this.filtrar();
   }
 
   get filtrosActivos(): { label: string; key: string; val: string; display: string }[] {
@@ -242,7 +392,7 @@ export class CatalogoComponent implements OnInit, OnDestroy {
     } else {
       (this.filtros as Record<string, string>)[key] = '';
     }
-    this.filtrar();
+    if (this.esModoCopiaLocal) this.filtrarLocalmente(); else this.filtrar();
   }
 
   get countFiltros(): number { return this.filtrosActivos.length; }
@@ -257,6 +407,14 @@ export class CatalogoComponent implements OnInit, OnDestroy {
       : 'https://images.unsplash.com/photo-1523381210434-271e8be1f52b?w=600&auto=format&fit=crop&q=60';
   }
 
+  fechaFormateada(fechaIso?: string): string {
+    return formatearFechaBolivia(fechaIso);
+  }
+
+  // ==========================================
+  // DETALLE DE PRODUCTO Y VARIANTES
+  // ==========================================
+
   abrirDetalle(producto: ProductoDTO, event?: Event): void {
     this.triggerElement = (event?.currentTarget as HTMLElement) || (document.activeElement as HTMLElement);
     this.productoSeleccionado = producto;
@@ -267,6 +425,8 @@ export class CatalogoComponent implements OnInit, OnDestroy {
     this.cantidadAgregar = 1;
     this.mensajeCarritoExito = null;
     this.mensajeCarritoError = null;
+    this.mensajeReservaOffline = null;
+    this.errorReservaOffline = null;
     this.cargandoVariantes = true;
 
     if (!this.modalAbierto) {
@@ -279,6 +439,15 @@ export class CatalogoComponent implements OnInit, OnDestroy {
       }
     }, 50);
 
+    // Si el producto proviene de la copia local, usar las variantes locales directamente
+    if (producto.es_copia_local && producto.variantes_locales && producto.variantes_locales.length > 0) {
+      this.variantesProducto = producto.variantes_locales;
+      this.cargandoVariantes = false;
+      this.seleccionarVariante(this.variantesProducto[0]);
+      return;
+    }
+
+    // Consulta en línea de variantes
     this.productoService.gestionarVariantes(producto.id, true).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (vars) => {
         this.variantesProducto = vars;
@@ -289,7 +458,7 @@ export class CatalogoComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.cargandoVariantes = false;
-        this.mensajeCarritoError = formatearErrorApi(err, 'No se pudieron cargar las variantes de la prenda.');
+        this.mensajeCarritoError = formatearErrorApi(err, 'No se pudieron cargar las opciones de la prenda.');
       }
     });
   }
@@ -300,6 +469,8 @@ export class CatalogoComponent implements OnInit, OnDestroy {
     this.disponibilidad = [];
     this.mensajeCarritoExito = null;
     this.mensajeCarritoError = null;
+    this.mensajeReservaOffline = null;
+    this.errorReservaOffline = null;
     if (this.modalAbierto) {
       desbloquearScrollBody();
       this.modalAbierto = false;
@@ -313,8 +484,30 @@ export class CatalogoComponent implements OnInit, OnDestroy {
     this.cantidadAgregar = 1;
     this.mensajeCarritoExito = null;
     this.mensajeCarritoError = null;
-    this.cargandoDisp = true;
+    this.mensajeReservaOffline = null;
+    this.errorReservaOffline = null;
 
+    // Si es copia local, mostrar disponibilidad conocida
+    if (this.productoSeleccionado?.es_copia_local) {
+      const dispConocida = v.disponibilidad_conocida ?? 0;
+      this.disponibilidad = [{
+        sucursal_id: 'local',
+        sucursal_nombre: 'Disponibilidad conocida en descarga',
+        ciudad_nombre: 'Todas las tiendas',
+        direccion: '',
+        disponible: dispConocida,
+        reservado: 0,
+        comprometido_traslado: 0,
+        en_transito: 0,
+        actualizado_en: this.snapshotLocal?.guardado_local_en || obtenerHoraBoliviaIso(),
+        es_disponibilidad_conocida: true
+      }];
+      this.cargandoDisp = false;
+      return;
+    }
+
+    // Consulta en línea de disponibilidad
+    this.cargandoDisp = true;
     this.catalogoService.consultarDisponibilidad(v.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (d) => {
         this.disponibilidad = d;
@@ -322,7 +515,7 @@ export class CatalogoComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.cargandoDisp = false;
-        this.mensajeCarritoError = formatearErrorApi(err, 'No se pudo consultar la disponibilidad de esta prenda.');
+        this.mensajeCarritoError = formatearErrorApi(err, 'No se pudo consultar la disponibilidad en tiempo real.');
       }
     });
   }
@@ -359,9 +552,56 @@ export class CatalogoComponent implements OnInit, OnDestroy {
     });
   }
 
+  // ==========================================
+  // RESERVA FUERA DE LÍNEA DESDE MODAL (reserva offline)
+  // ==========================================
+
+  async guardarReservaFueraDeLinea(): Promise<void> {
+    if (!this.varianteSeleccionada || !this.productoSeleccionado) return;
+    if (!this.esCliente()) {
+      this.router.navigate(['/auth/login'], { queryParams: { redirectUrl: '/catalogo' } });
+      return;
+    }
+
+    this.guardandoReservaOffline = true;
+    this.mensajeReservaOffline = null;
+    this.errorReservaOffline = null;
+
+    // Calcular fecha estimada de visita (ej: mañana a las 11:00 en hora de Bolivia)
+    const fechaVisita = new Date();
+    fechaVisita.setDate(fechaVisita.getDate() + 1);
+    fechaVisita.setHours(11, 0, 0, 0);
+
+    const sucursalDestinoId = this.snapshotLocal?.sucursales?.[0]?.id;
+    if (!sucursalDestinoId) {
+      this.guardandoReservaOffline = false;
+      this.errorReservaOffline = 'No se encontró una sucursal válida en el catálogo descargado para asociar la reserva.';
+      return;
+    }
+
+    try {
+      await this.syncOfflineService.registrarReservaOffline({
+        sucursal_id: sucursalDestinoId,
+        visita_en: obtenerHoraBoliviaIso(fechaVisita),
+        lineas: [
+          {
+            variante_id: this.varianteSeleccionada.id,
+            cantidad: this.cantidadAgregar || 1
+          }
+        ]
+      });
+
+      this.guardandoReservaOffline = false;
+      this.mensajeReservaOffline = 'Reserva guardada en tu dispositivo. Queda en estado "Pendiente de envío" y se sincronizará automáticamente cuando te conectes.';
+    } catch (err: any) {
+      this.guardandoReservaOffline = false;
+      this.errorReservaOffline = err?.message || 'No fue posible guardar la reserva en el almacenamiento local.';
+    }
+  }
+
   // ─── Búsqueda asistida por texto IA ───
   buscarConIA(): void {
-    if (!this.esCliente() || !this.textoConsultaIA.trim()) return;
+    if (!this.esCliente() || !this.textoConsultaIA.trim() || !this.syncOfflineService.estaEnLinea) return;
     this.cargandoIA = true;
     this.mensajeIA = null;
     this.resultadoBusquedaIA = [];

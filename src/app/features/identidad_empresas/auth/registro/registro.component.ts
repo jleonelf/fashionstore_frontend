@@ -1,7 +1,7 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 import { RegistroClienteDTO } from '../../models/auth.models';
 import { formatearErrorApi } from '../../../../core/utils/error-handler.util';
@@ -13,8 +13,9 @@ import { formatearErrorApi } from '../../../../core/utils/error-handler.util';
   templateUrl: './registro.component.html',
   styleUrls: ['./registro.component.css']
 })
-export class RegistroComponent {
+export class RegistroComponent implements OnInit {
   datosRegistro: RegistroClienteDTO = {
+    empresa_codigo: '',
     nombres: '',
     apellidos: '',
     correo_electronico: '',
@@ -32,11 +33,26 @@ export class RegistroComponent {
 
   constructor(
     private authService: AuthService,
-    private router: Router
+    private router: Router,
+    private route: ActivatedRoute
   ) {}
+
+  ngOnInit(): void {
+    const paramEmpresa =
+      this.route.snapshot.queryParamMap.get('empresa') ||
+      this.route.snapshot.queryParamMap.get('empresa_codigo');
+    if (paramEmpresa) {
+      this.datosRegistro.empresa_codigo = paramEmpresa.trim().toLowerCase();
+    }
+  }
 
   validarFormulario(): boolean {
     this.erroresCampos = {};
+
+    const codigo = this.datosRegistro.empresa_codigo?.trim() || '';
+    if (!codigo) {
+      this.erroresCampos['empresa_codigo'] = 'El código de empresa es obligatorio para registrarse.';
+    }
 
     const nombres = this.datosRegistro.nombres?.trim() || '';
     if (!nombres) {
@@ -134,6 +150,7 @@ export class RegistroComponent {
 
     // Saneamiento de datos antes de enviar al backend
     const payload: RegistroClienteDTO = {
+      empresa_codigo: this.datosRegistro.empresa_codigo?.trim().toLowerCase() || undefined,
       nombres: this.datosRegistro.nombres.trim(),
       apellidos: this.datosRegistro.apellidos.trim(),
       correo_electronico: this.datosRegistro.correo_electronico.trim().toLowerCase(),
@@ -149,7 +166,11 @@ export class RegistroComponent {
         this.cargando = false;
         this.mensajeExito = `¡Cuenta creada exitosamente para ${cliente.nombre_completo}! Redirigiendo a inicio de sesión...`;
         setTimeout(() => {
-          this.router.navigate(['/auth/login']);
+          const params: Record<string, string> = {};
+          if (payload.empresa_codigo) {
+            params['empresa'] = payload.empresa_codigo;
+          }
+          this.router.navigate(['/auth/login'], { queryParams: params });
         }, 1500);
       },
       error: (err) => {

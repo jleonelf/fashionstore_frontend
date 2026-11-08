@@ -10,13 +10,66 @@
     </div>
     <div class="head-stat">
       <div class="stat-num">{{ productos.length }}</div>
-      <div class="stat-label">prendas activas</div>
-      <div class="stat-hint" *ngIf="countFiltros">{{ countFiltros }} filtros</div>
+      <div class="stat-label">prendas en vista</div>
+      <div class="stat-hint" *ngIf="countFiltros">{{ countFiltros }} filtros activos</div>
     </div>
   </div>
 
-  <!-- Recomendaciones IA para CLIENTE -->
-  <section *ngIf="esCliente() && recomendaciones.length > 0" class="recomendaciones-banner card">
+  <!-- Barra de sincronización y descarga fuera de línea (descarga de catalogo / consulta catalogo offline) -->
+  <section class="offline-bar card" aria-label="Gestión de copia local para consulta fuera de línea">
+    <div class="offline-bar-info">
+      <div class="offline-status-line">
+        <span class="status-indicator" [class.online]="syncOfflineService.estaEnLinea" [class.offline]="!syncOfflineService.estaEnLinea"></span>
+        <strong *ngIf="syncOfflineService.estaEnLinea">Conectado en línea</strong>
+        <strong *ngIf="!syncOfflineService.estaEnLinea">Modo fuera de línea</strong>
+        <span *ngIf="snapshotLocal" class="snapshot-tag">
+          Copia local: Versión {{ snapshotLocal.catalogo_version }} · {{ fechaFormateada(snapshotLocal.guardado_local_en) }}
+        </span>
+        <span *ngIf="!snapshotLocal" class="snapshot-tag empty-tag">
+          Sin copia local descargada
+        </span>
+      </div>
+      <p class="offline-desc">
+        Descarga una copia completa en este dispositivo para explorar prendas y consultar existencias conocidas incluso sin acceso a internet.
+      </p>
+    </div>
+    <div class="offline-bar-actions">
+      <button
+        type="button"
+        class="btn-ghost"
+        (click)="descargarCopiaLocal()"
+        [disabled]="descargandoCopia || !syncOfflineService.estaEnLinea"
+      >
+        <span *ngIf="!descargandoCopia">{{ snapshotLocal ? 'Actualizar copia local' : 'Descargar catálogo local' }}</span>
+        <span *ngIf="descargandoCopia">Descargando catálogo…</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- Mensajes de feedback de descarga -->
+  <div *ngIf="mensajeDescarga" class="alert success" role="status">
+    {{ mensajeDescarga }}
+  </div>
+  <div *ngIf="errorDescarga" class="alert err" role="alert">
+    {{ errorDescarga }}
+  </div>
+
+  <!-- Banner visible cuando se consulta la copia local (consulta catalogo offline) -->
+  <div *ngIf="esModoCopiaLocal && snapshotLocal" class="copia-local-banner card" role="status">
+    <div class="banner-content">
+      <span class="pill-local">Copia local</span>
+      <div>
+        <strong>Consulta sobre catálogo descargado</strong>
+        <p class="banner-sub">
+          Copia local — {{ fechaFormateada(snapshotLocal.guardado_local_en || snapshotLocal.generado_en) }} — Versión {{ snapshotLocal.catalogo_version }}.
+          La disponibilidad mostrada es la registrada al momento de la descarga y se confirmará al reconectar.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recomendaciones IA para CLIENTE (solo en línea) -->
+  <section *ngIf="esCliente() && recomendaciones.length > 0 && !esModoCopiaLocal" class="recomendaciones-banner card">
     <div class="rec-head">
       <span class="rec-badge">Sugerencias para tu estilo</span>
       <p class="rec-sub">Selección personalizada según tus preferencias de compra y navegación.</p>
@@ -41,7 +94,7 @@
       <span class="search-ico" aria-hidden="true">⌕</span>
       <input [(ngModel)]="filtros.texto" placeholder="Buscar: blusa seda, Urban, verde..." (keyup.enter)="filtrar()" aria-label="Buscar en catálogo" />
       <button type="button" class="btn-ink" (click)="filtrar()" [disabled]="cargando">{{ cargando ? 'Buscando…' : 'Buscar' }}</button>
-      <button *ngIf="esCliente()" type="button" class="btn-ghost" (click)="modoAsistenteIA = !modoAsistenteIA">
+      <button *ngIf="esCliente() && syncOfflineService.estaEnLinea" type="button" class="btn-ghost" (click)="modoAsistenteIA = !modoAsistenteIA">
         {{ modoAsistenteIA ? 'Cerrar asistente' : 'Asistente de estilo IA' }}
       </button>
       <a *ngIf="esVisitante()" routerLink="/auth/login" class="btn-ghost">
@@ -50,7 +103,7 @@
     </div>
 
     <!-- Panel de asistente IA por texto -->
-    <div *ngIf="esCliente() && modoAsistenteIA" class="panel-asistente-ia">
+    <div *ngIf="esCliente() && modoAsistenteIA && syncOfflineService.estaEnLinea" class="panel-asistente-ia">
       <label for="consulta-ia" class="asistente-label">Describe lo que necesitas con tus palabras (búsqueda asistida por texto):</label>
       <div class="asistente-input-row">
         <input
@@ -98,74 +151,82 @@
     <aside class="facets" [class.open]="filtrosAbiertos">
       <div class="facets-head">
         <h2>Filtros</h2>
-        <button type="button" class="icon-btn" (click)="filtrosAbiertos = !filtrosAbiertos" [attr.aria-expanded]="filtrosAbiertos">{{ filtrosAbiertos ? '—' : '+' }}</button>
+        <button type="button" class="icon-btn" (click)="limpiar()" title="Limpiar todos los filtros" aria-label="Limpiar filtros">↺</button>
       </div>
 
-      <div class="facet-body" *ngIf="filtrosAbiertos">
+      <div class="facet-body">
+        <!-- Categoría -->
         <div class="facet">
-          <label>Categoría</label>
-          <select [(ngModel)]="filtros.categoria_id" (change)="filtrar()">
-            <option value="">Todas</option>
+          <label for="filtro-cat">Categoría</label>
+          <select id="filtro-cat" [(ngModel)]="filtros.categoria_id" (change)="filtrar()">
+            <option value="">Todas las categorías</option>
             <option *ngFor="let c of categorias" [value]="c.id">{{ c.nombre }}</option>
           </select>
         </div>
 
+        <!-- Talla -->
         <div class="facet">
           <label>Talla</label>
           <div class="swatch-row">
-            <button *ngFor="let t of tallas" class="swatch-pill" [class.on]="filtros.talla_id===t.id" (click)="seleccionarTalla(t.id)">{{ t.nombre }}</button>
-            <span *ngIf="tallas.length===0" class="muted sm">Sin tallas</span>
-          </div>
-        </div>
-
-        <div class="facet">
-          <label>Color · herraje</label>
-          <div class="color-row">
-            <button *ngFor="let c of colores" class="color-btn" [class.on]="filtros.color_id===c.id" (click)="seleccionarColor(c.id)" [title]="c.nombre">
-              <span class="dot" [style.background]="c.codigo_hex || '#e2e8f0'"></span>
-              <span class="cname">{{ c.nombre }}</span>
+            <button
+              type="button"
+              *ngFor="let t of tallas"
+              class="swatch-pill"
+              [class.on]="filtros.talla_id === t.id"
+              (click)="seleccionarTalla(t.id)"
+            >
+              {{ t.nombre }}
             </button>
-            <span *ngIf="colores.length===0" class="muted sm">Sin colores</span>
           </div>
         </div>
 
+        <!-- Color -->
+        <div class="facet">
+          <label>Color</label>
+          <div class="color-row">
+            <button
+              type="button"
+              *ngFor="let col of colores"
+              class="color-btn"
+              [class.on]="filtros.color_id === col.id"
+              (click)="seleccionarColor(col.id)"
+              [title]="col.nombre"
+            >
+              <span class="dot" [style.background]="col.codigo_hex || '#e2e8f0'"></span>
+              <span class="cname">{{ col.nombre }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Rango de precio -->
+        <div class="facet">
+          <label>Rango de precio (Bs)</label>
+          <div class="price-row">
+            <input type="number" [(ngModel)]="filtros.precio_min" placeholder="Mín" min="0" aria-label="Precio mínimo" />
+            <span>—</span>
+            <input type="number" [(ngModel)]="filtros.precio_max" placeholder="Máx" min="0" aria-label="Precio máximo" />
+          </div>
+          <button type="button" class="btn-ghost sm full" (click)="filtrar()">Aplicar precio</button>
+        </div>
+
+        <!-- Género -->
         <div class="facet">
           <label>Género</label>
           <div class="swatch-row">
-            <button type="button" class="swatch-pill" [class.on]="filtros.genero==='MUJER'" (click)="seleccionarGenero('MUJER')">Mujer</button>
-            <button type="button" class="swatch-pill" [class.on]="filtros.genero==='HOMBRE'" (click)="seleccionarGenero('HOMBRE')">Hombre</button>
-            <button type="button" class="swatch-pill" [class.on]="filtros.genero==='UNISEX'" (click)="seleccionarGenero('UNISEX')">Unisex</button>
+            <button
+              type="button"
+              *ngFor="let g of ['Femenino', 'Masculino', 'Unisex']"
+              class="swatch-pill"
+              [class.on]="filtros.genero === g"
+              (click)="seleccionarGenero(g)"
+            >
+              {{ g }}
+            </button>
           </div>
         </div>
 
-        <div class="facet">
-          <label>Temporada</label>
-          <select [(ngModel)]="filtros.temporada_id" (change)="filtrar()">
-            <option value="">Todas</option>
-            <option *ngFor="let t of temporadas" [value]="t.id">{{ t.nombre }}</option>
-          </select>
-        </div>
-
-        <div class="facet">
-          <label>Colección</label>
-          <select [(ngModel)]="filtros.coleccion_id" (change)="filtrar()">
-            <option value="">Todas</option>
-            <option *ngFor="let c of colecciones" [value]="c.id">{{ c.nombre }}</option>
-          </select>
-        </div>
-
-        <div class="facet">
-          <label>Precio Bs.</label>
-          <div class="price-row">
-            <input type="number" [(ngModel)]="filtros.precio_min" placeholder="Min" min="0" />
-            <span>—</span>
-            <input type="number" [(ngModel)]="filtros.precio_max" placeholder="Max" min="0" />
-          </div>
-          <button type="button" class="btn-ghost full" (click)="filtrar()">Aplicar precio</button>
-        </div>
-
+        <!-- Botón limpiar -->
         <button type="button" class="btn-ghost full muted-btn" (click)="limpiar()">Limpiar filtros</button>
-        <p class="hint facets-hint">Stock individual por sucursal. Selecciona la prenda para ver tallas y disponibilidad.</p>
       </div>
     </aside>
 
@@ -173,12 +234,33 @@
     <section class="products">
       <div class="products-bar">
         <span class="muted sm">{{ productos.length }} resultados</span>
-        <button type="button" class="btn-ghost sm show-filters" (click)="filtrosAbiertos = !filtrosAbiertos">{{ filtrosAbiertos ? 'Ocultar filtros' : 'Mostrar filtros' }}</button>
+        <button type="button" class="btn-ghost sm show-filters" (click)="filtrosAbiertos = !filtrosAbiertos">
+          {{ filtrosAbiertos ? 'Ocultar filtros' : 'Mostrar filtros' }}
+        </button>
       </div>
 
       <div *ngIf="cargando" class="loading"><span class="shimmer"></span> Cargando perchero…</div>
 
-      <div class="grid" *ngIf="!cargando">
+      <!-- ESTADO: Sin copia local descargada y sin conexión (consulta catalogo offline regla explícita) -->
+      <div *ngIf="sinCopiaLocal && !cargando" class="empty card no-snapshot-box">
+        <div class="empty-ill" aria-hidden="true">∅</div>
+        <h3>No hay una copia local descargada</h3>
+        <p>
+          No se encontró un catálogo guardado previamente en este dispositivo.
+          Para consultar prendas fuera de línea, conéctate a internet y descarga la copia local.
+        </p>
+        <button
+          *ngIf="syncOfflineService.estaEnLinea"
+          type="button"
+          class="btn-ink"
+          (click)="descargarCopiaLocal()"
+          [disabled]="descargandoCopia"
+        >
+          {{ descargandoCopia ? 'Descargando…' : 'Descargar catálogo ahora' }}
+        </button>
+      </div>
+
+      <div class="grid" *ngIf="!cargando && !sinCopiaLocal">
         <article
           *ngFor="let p of productos"
           class="product-card"
@@ -196,17 +278,23 @@
             </div>
           </div>
           <div class="body">
+            <!-- Badge promocional condicional (consulta catalogo offline) -->
+            <div *ngIf="p.promocion_badge" class="promo-flag">
+              {{ p.promocion_badge }}
+            </div>
+
             <h3>{{ p.nombre }}</h3>
-            <p class="muted desc">{{ p.descripcion || 'Fibra seleccionada · Corte atelier' }}</p>
+            <p class="muted desc">{{ p.descripcion || 'Fibra seleccionada · Confección atelier' }}</p>
             <div class="meta">
               <span class="chip">{{ p.genero || '—' }}</span>
               <span class="chip brass">{{ p.marca || 'FashionStore' }}</span>
-              <span class="chip muted-chip">{{ p.imagenes.length }} img</span>
+              <span *ngIf="p.es_copia_local" class="chip chip-offline">Disponibilidad conocida: {{ p.disponibilidad_conocida_total || 0 }}</span>
+              <span *ngIf="!p.es_copia_local" class="chip muted-chip">{{ p.imagenes.length }} img</span>
             </div>
           </div>
         </article>
 
-        <div *ngIf="productos.length===0 && !cargando" class="empty">
+        <div *ngIf="productos.length === 0 && !cargando && !sinCopiaLocal" class="empty">
           <div class="empty-ill" aria-hidden="true">∅</div>
           <h3>Sin coincidencias en el perchero</h3>
           <p>Prueba con menos filtros o con otra búsqueda.</p>
@@ -216,7 +304,7 @@
     </section>
   </div>
 
-  <!-- MODAL detalle producto + variantes + stock + carrito -->
+  <!-- MODAL detalle producto + variantes + stock + carrito + reserva offline -->
   <div
     *ngIf="productoSeleccionado"
     class="modal-overlay"
@@ -257,6 +345,12 @@
         <!-- Columna información y variantes -->
         <div class="modal-info-col">
           <p class="modal-desc">{{ productoSeleccionado.descripcion || 'Prenda con confección de primera calidad.' }}</p>
+
+          <!-- Aviso de promoción condicional en el modal -->
+          <div *ngIf="productoSeleccionado.promocion_badge" class="promo-modal-callout">
+            <strong>Condición de compra:</strong> {{ productoSeleccionado.promocion_badge }}
+          </div>
+
           <div class="modal-precio-row">
             <span class="precio-label">Precio base:</span>
             <span class="precio-val">Bs {{ productoSeleccionado.precio_base }}</span>
@@ -290,9 +384,16 @@
           <!-- Detalle de la variante seleccionada -->
           <div *ngIf="varianteSeleccionada" class="variante-detalle-box">
             <div class="box-head">
-              <strong>Precio de esta variante: Bs {{ varianteSeleccionada.precio }}</strong>
-              <span *ngIf="stockDisponibleTotal > 0" class="stock-badge in-stock">{{ stockDisponibleTotal }} disponibles</span>
+              <strong>Precio: Bs {{ varianteSeleccionada.precio }}</strong>
+              <span *ngIf="stockDisponibleTotal > 0" class="stock-badge in-stock">
+                {{ productoSeleccionado.es_copia_local ? 'Conocida: ' : '' }}{{ stockDisponibleTotal }} disponibles
+              </span>
               <span *ngIf="stockDisponibleTotal === 0 && !cargandoDisp" class="stock-badge out-stock">Agotado</span>
+            </div>
+
+            <!-- Advertencia de disponibilidad conocida si es copia local (consulta catalogo offline) -->
+            <div *ngIf="productoSeleccionado.es_copia_local" class="alerta-disp-conocida" role="status">
+              <p><strong>Disponibilidad conocida:</strong> Existencia registrada al descargar el catálogo. Puede variar al conectar.</p>
             </div>
 
             <!-- Tabla de disponibilidad por sucursal -->
@@ -328,9 +429,19 @@
               {{ mensajeCarritoError }}
             </div>
 
-            <!-- Acciones de compra -->
+            <!-- Feedback de reserva fuera de línea -->
+            <div *ngIf="mensajeReservaOffline" class="alert success" role="status">
+              {{ mensajeReservaOffline }}
+              <a routerLink="/reservas" (click)="cerrarModal()" class="alert-link">Ver reservas pendientes →</a>
+            </div>
+            <div *ngIf="errorReservaOffline" class="alert err" role="alert">
+              {{ errorReservaOffline }}
+            </div>
+
+            <!-- Acciones de compra y reserva -->
             <div class="compra-acciones">
-              <div *ngIf="esCliente() && stockDisponibleTotal > 0" class="cant-row">
+              <!-- En línea: agregar al carrito normal -->
+              <div *ngIf="esCliente() && !productoSeleccionado.es_copia_local && stockDisponibleTotal > 0" class="cant-row">
                 <label for="cant-modal">Cantidad:</label>
                 <input
                   id="cant-modal"
@@ -350,13 +461,36 @@
                 </button>
               </div>
 
+              <!-- Fuera de línea: Registrar reserva diferida (reserva offline) -->
+              <div *ngIf="esCliente() && productoSeleccionado.es_copia_local" class="offline-reserva-action">
+                <label for="cant-modal-off">Cantidad a reservar:</label>
+                <div class="cant-row">
+                  <input
+                    id="cant-modal-off"
+                    type="number"
+                    min="1"
+                    [(ngModel)]="cantidadAgregar"
+                    class="cant-input"
+                  />
+                  <button
+                    type="button"
+                    class="btn-ink"
+                    (click)="guardarReservaFueraDeLinea()"
+                    [disabled]="guardandoReservaOffline"
+                  >
+                    {{ guardandoReservaOffline ? 'Guardando…' : 'Guardar reserva fuera de línea' }}
+                  </button>
+                </div>
+                <small class="hint">Quedará en espera y se sincronizará automáticamente al conectar.</small>
+              </div>
+
               <div *ngIf="esVisitante() && stockDisponibleTotal > 0" class="login-prompt">
                 <a routerLink="/auth/login" (click)="cerrarModal()" class="btn-ink">
-                  Inicia sesión para agregar al carrito
+                  Inicia sesión para reservar o comprar
                 </a>
               </div>
               <div *ngIf="esPersonalInterno() && stockDisponibleTotal > 0" class="login-prompt" role="status">
-                <p>Vista de consulta operativa. Las compras se realizan únicamente desde una cuenta de cliente.</p>
+                <p>Vista de consulta operativa. Las reservas y compras de clientes se realizan desde su cuenta.</p>
               </div>
             </div>
           </div>

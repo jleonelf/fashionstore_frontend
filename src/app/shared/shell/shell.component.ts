@@ -136,6 +136,17 @@ export class ShellComponent implements OnInit {
     return this.usuarioActual?.rol === 'ADMINISTRADOR';
   }
 
+  esPlataforma(): boolean {
+    return !this.usuarioActual?.empresa_id && ['SUPERADMIN', 'ADMINISTRADOR_PLATAFORMA', 'ADMINISTRADOR_SISTEMA'].includes(this.usuarioActual?.rol || '');
+  }
+
+  puedeVerEmpresas(): boolean {
+    const rol = this.usuarioActual?.rol || '';
+    const esAdminPlat = ['SUPERADMIN', 'ADMINISTRADOR_PLATAFORMA', 'ADMINISTRADOR_SISTEMA'].includes(rol);
+    const esAdminSinEmpresa = rol === 'ADMINISTRADOR' && !this.usuarioActual?.empresa_id;
+    return esAdminPlat || esAdminSinEmpresa;
+  }
+
   esEncargado(): boolean {
     return this.usuarioActual?.rol === 'ENCARGADO';
   }
@@ -163,6 +174,8 @@ export class ShellComponent implements OnInit {
   puedeVerCaja(): boolean { return ['ADMINISTRADOR','CAJERO'].includes(this.usuarioActual?.rol || ''); }
   puedeVerOperaciones(): boolean { return ['ADMINISTRADOR','ENCARGADO'].includes(this.usuarioActual?.rol || ''); }
   puedeVerHistorial(): boolean { return this.usuarioActual?.rol === 'CLIENTE'; }
+  puedeVerSaldo(): boolean { return this.esCliente(); }
+  puedeVerReembolsos(): boolean { return ['CLIENTE', 'ADMINISTRADOR', 'ENCARGADO'].includes(this.usuarioActual?.rol || ''); }
 
   cerrarSesion(): void {
     this.cerrarDropdowns();

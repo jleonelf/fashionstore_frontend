@@ -78,6 +78,53 @@ export interface CheckoutRespuestaDTO {
 
 // Stripe
 
+export type EstadoMetodoPreparado = 'PENDIENTE' | 'LISTO' | 'REVOCADO';
+
+export interface MetodoPrepararDTO {
+  huella_dispositivo?: string;
+}
+
+export interface MetodoPreparadoDTO {
+  preparacion_pago_id: string;
+  client_secret: string;
+  estado: EstadoMetodoPreparado;
+  setup_intent_id?: string;
+  proveedor?: string;
+}
+
+export type EstadoOrdenPago = 'PENDIENTE' | 'REQUIERE_ACCION_CLIENTE' | 'CAPTURADO' | 'FALLIDO';
+
+export interface OrdenPagoCrearDTO {
+  contexto: 'VENTA' | 'PEDIDO';
+  recurso_id: string;
+  oferta_revision?: number;
+  metodo_preparado_id?: string;
+  consentimiento_cobro_posterior?: boolean;
+}
+
+export interface OrdenPagoDTO {
+  orden_pago_id: string;
+  estado: EstadoOrdenPago;
+  monto_bob: DecimalApi;
+  monto_usd?: DecimalApi;
+  centavos_usd?: number;
+  tasa_id?: string;
+  client_secret?: string;
+}
+
+export interface ContinuarAccionDTO {
+  payment_intent_id: string;
+}
+
+export interface PedidoCompraDTO {
+  pedido_id: string;
+  oferta_revision?: number;
+  total_bob: DecimalApi;
+  estado_pago: string;
+  estado_cumplimiento: string;
+  creada_en?: string;
+}
+
 export interface IntencionCrearDTO {
   venta_id: string;
 }

@@ -231,6 +231,78 @@
             <strong>Total a pagar:</strong> {{ bs(totalVisible) }}
           </p>
         </div>
+
+        <!-- Consentimiento y preparación de método de cobro v3 -->
+        <div class="consentimiento-v3-box">
+          <label class="consentimiento-checkbox">
+            <input
+              type="checkbox"
+              [checked]="consentimientoCobroV3"
+              (change)="consentimientoCobroV3 = $any($event.target).checked"
+            >
+            <span>
+              Autorizo el cobro diferido o automático con mi método de pago preparado cuando se confirme la orden o al reconectar.
+            </span>
+          </label>
+
+          <div class="preparacion-metodo-fila" *ngIf="estaEnLinea">
+            <button
+              type="button"
+              class="cycle-secondary btn-preparar-metodo"
+              [disabled]="preparandoMetodo || metodoPreparadoExito || mostrandoFormularioTarjeta"
+              (click)="prepararMetodoPago()"
+            >
+              {{ preparandoMetodo ? 'Preparando método seguro…' : (metodoPreparadoExito ? '✓ Método de pago preparado' : 'Preparar método de pago seguro') }}
+            </button>
+            <span *ngIf="metodoPreparadoExito" class="metodo-preparado-nota">
+              Método vinculado de forma segura con Stripe para compras conectadas y diferidas.
+            </span>
+          </div>
+
+          <!-- Formulario Stripe Elements (CU22) -->
+          <div *ngIf="mostrandoFormularioTarjeta" class="formulario-tarjeta-box cycle-card">
+            <p class="formulario-tarjeta-titulo">Ingresa los datos de tu tarjeta para vincularla de forma segura:</p>
+            <div id="stripe-card-element" class="stripe-card-container">
+              <div id="card-element"></div>
+            </div>
+            <p *ngIf="errorTarjeta" class="field-error" role="alert">{{ errorTarjeta }}</p>
+            <div class="formulario-tarjeta-acciones">
+              <button
+                type="button"
+                class="cycle-primary btn-confirmar-tarjeta"
+                [disabled]="!cardElementValido || confirmandoTarjeta"
+                (click)="confirmarTarjetaStripe()"
+              >
+                {{ confirmandoTarjeta ? 'Validando tarjeta…' : 'Guardar y vincular tarjeta' }}
+              </button>
+              <button
+                type="button"
+                class="cycle-secondary btn-cancelar-tarjeta"
+                [disabled]="confirmandoTarjeta"
+                (click)="cancelarFormularioTarjeta()"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Advertencia si no hay tasa de cambio vigente -->
+        <div *ngIf="!tieneTasaValida" class="cycle-alert warning tasa-advertencia" role="alert">
+          <p>
+            <strong>Tasa de cambio no disponible:</strong> No se pudo obtener la tasa oficial vigente.
+            Por seguridad, la autorización de cobro automático al reconectar ha sido desactivada.
+            Tu compra se registrará fuera de línea y podrás pagar al recuperar la conexión y la tasa oficial.
+          </p>
+          <button type="button" class="cycle-link btn-reintentar-tasa" (click)="reintentarObtenerTasa()">
+            Reintentar obtener tasa
+          </button>
+        </div>
+
+        <!-- Aviso para modo fuera de línea -->
+        <div *ngIf="!estaEnLinea" class="cycle-alert warning" role="status">
+          <p><strong>Modo fuera de línea:</strong> No detectamos conexión activa. Tu orden con autorización de cobro se guardará de forma segura en este dispositivo y se procesará automáticamente al reconectar.</p>
+        </div>
       </div>
 
       <div class="step-actions">
@@ -241,7 +313,7 @@
           (click)="confirmarCheckout()"
           [disabled]="procesando"
         >
-          {{ procesando ? 'Confirmando pedido…' : 'Confirmar y pagar con Stripe' }}
+          {{ procesando ? 'Procesando compra…' : (!estaEnLinea ? 'Guardar compra fuera de línea' : 'Confirmar y pagar con Stripe') }}
         </button>
       </div>
     </div>

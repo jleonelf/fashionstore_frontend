@@ -222,5 +222,34 @@ describe('PagoComponent (Ciclo de Vida del Pago Stripe, Polling y Estados)', () 
 
       discardPeriodicTasks();
     }));
+
+    it('maneja el flujo de autenticación 3D-Secure cuando se requiere acción bancaria', fakeAsync(() => {
+      fixture.detectChanges();
+      const mockStripe = {
+        confirmCardPayment: jasmine.createSpy('confirmCardPayment').and.returnValue(
+          Promise.resolve({ error: { code: 'authentication_required', message: 'Autenticación requerida' } })
+        ),
+        handleCardAction: jasmine.createSpy('handleCardAction').and.returnValue(
+          Promise.resolve({ paymentIntent: { status: 'succeeded' } })
+        )
+      };
+      (component as any).stripe = mockStripe;
+      (component as any).cardElement = {};
+      component.intencion = mockIntencion;
+
+      component.confirmarPago();
+      tick();
+
+      expect(component.requiereAccion3DS).toBeTrue();
+      expect(component.error).toContain('3D-Secure');
+
+      component.continuarAccion3DS();
+      tick();
+
+      expect(mockStripe.handleCardAction).toHaveBeenCalledWith(mockIntencion.client_secret);
+      expect(component.requiereAccion3DS).toBeFalse();
+
+      discardPeriodicTasks();
+    }));
   });
 });
