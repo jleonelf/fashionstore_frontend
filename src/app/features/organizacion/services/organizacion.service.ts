@@ -48,9 +48,10 @@ export class OrganizacionService {
   /**
    * Listar sucursales con filtro opcional de ciudad
    */
-  gestionarSucursales(ciudadId?: string): Observable<SucursalDTO[]> {
+  gestionarSucursales(ciudadId?: string, soloActivas = true): Observable<SucursalDTO[]> {
     let params = new HttpParams();
     if (ciudadId) params = params.set('ciudad_id', ciudadId);
+    if (!soloActivas) params = params.set('solo_activas', 'false');
     return this.http.get<SucursalDTO[]>(`${this.apiUrl}/sucursales`, { params });
   }
 
@@ -114,5 +115,12 @@ export class OrganizacionService {
    */
   listarHistorialSuscripciones(empresaId: string): Observable<SuscripcionRespuestaDTO[]> {
     return this.http.get<SuscripcionRespuestaDTO[]>(`${this.apiUrl}/empresas/${empresaId}/suscripciones`);
+  }
+
+  /**
+   * Obtener tasa de cambio BOB/USD vigente (CU12)
+   */
+  obtenerTasaVigente(): Observable<{ id: string; tasa_bob_por_usd: number | string; vigente_desde?: string }> {
+    return this.http.get<{ id: string; tasa_bob_por_usd: number | string; vigente_desde?: string }>(`${this.apiUrl}/tasas-cambio/vigente`);
   }
 }

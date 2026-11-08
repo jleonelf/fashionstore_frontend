@@ -225,6 +225,21 @@ describe('ShellComponent (Navegación y Acceso por Roles)', () => {
     });
   });
 
+  it('muestra al SUPERADMIN el panel de plataforma sin navegación de tienda', () => {
+    usuarioSubject.next({
+      id: 'super-1', usuario_id: 'super-1', nombres: 'Super', apellidos: 'Admin',
+      nombre_completo: 'Super Admin', correo_electronico: 'super@example.com',
+      rol: 'SUPERADMIN', estado: 'ACTIVO', preferencias: {}, creado_en: '2026-01-01', empresa_id: null
+    });
+    fixture.detectChanges();
+
+    expect(component.esPlataforma()).toBeTrue();
+    expect(component.esAdmin()).toBeFalse();
+    expect(component.puedeVerCaja()).toBeFalse();
+    expect(fixture.nativeElement.querySelector('a[href="/plataforma"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('a[href="/caja"]')).toBeNull();
+  });
+
   describe('Control de Menú Móvil y Teclado', () => {
     it('alternarMenu abre y cierra correctamente bloqueando y desbloqueando el body', () => {
       expect(component.menuAbierto).toBeFalse();

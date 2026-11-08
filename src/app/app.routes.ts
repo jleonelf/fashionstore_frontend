@@ -1,10 +1,11 @@
 import { Routes } from '@angular/router';
-import { authGuard } from './core/guards/auth.guard';
+import { authGuard, platformHomeGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
   {
     path: '',
     loadComponent: () => import('./features/experiencia_cliente/landing/landing.component').then(m => m.LandingComponent),
+    canActivate: [platformHomeGuard],
     title: 'FashionStore — La ropa se prueba. La ciudad te la acerca.'
   },
   {
@@ -115,6 +116,13 @@ export const routes: Routes = [
     canActivate: [authGuard],
     data: { roles: ['ADMINISTRADOR', 'ENCARGADO'] },
     title: 'Inteligencia — FashionStore'
+  },
+  {
+    path: 'plataforma',
+    loadComponent: () => import('./features/identidad_empresas/empresas/empresas.component').then(m => m.EmpresasComponent),
+    canActivate: [authGuard],
+    data: { roles: ['SUPERADMIN', 'ADMINISTRADOR_PLATAFORMA', 'ADMINISTRADOR_SISTEMA'] },
+    title: 'Panel de plataforma — FashionStore'
   },
   {
     path: 'empresas',

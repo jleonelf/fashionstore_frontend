@@ -6,6 +6,9 @@
 
   <!-- Navegacion principal de escritorio organizada por rol -->
   <nav class="nav-links" aria-label="Navegación principal">
+    <ng-container *ngIf="esPlataforma()">
+      <a routerLink="/plataforma" routerLinkActive="active" class="nav-item">Panel de plataforma</a>
+    </ng-container>
     <!-- Visitante / No autenticado -->
     <ng-container *ngIf="!usuarioActual">
       <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}" class="nav-item">Inicio</a>
@@ -178,8 +181,12 @@
   </div>
 
   <div class="drawer-body">
+    <div class="drawer-section" *ngIf="esPlataforma()">
+      <div class="drawer-section-title">Plataforma</div>
+      <a routerLink="/plataforma" routerLinkActive="active" (click)="cerrarMenu()" class="drawer-link"><span>Tiendas y planes</span></a>
+    </div>
     <!-- Tienda / Cliente -->
-    <div class="drawer-section">
+    <div class="drawer-section" *ngIf="!esPlataforma()">
       <div class="drawer-section-title">Tienda</div>
       <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}" (click)="cerrarMenu()" class="drawer-link">
         <span>Inicio</span>
@@ -197,7 +204,7 @@
     </div>
 
     <!-- Gestión Operativa para Cajero / Encargado / Admin -->
-    <div class="drawer-section" *ngIf="usuarioActual && !esCliente()">
+    <div class="drawer-section" *ngIf="usuarioActual && !esCliente() && !esPlataforma()">
       <div class="drawer-section-title">Operaciones</div>
       <a routerLink="/pedidos" routerLinkActive="active" *ngIf="puedeVerPedidos()" (click)="cerrarMenu()" class="drawer-link">
         <span>Cola de pedidos</span>
@@ -217,7 +224,7 @@
     </div>
 
     <!-- Catálogo e Inventario para Encargado / Admin -->
-    <div class="drawer-section" *ngIf="usuarioActual && (esAdmin() || esEncargado() || esCajero())">
+    <div class="drawer-section" *ngIf="usuarioActual && !esPlataforma() && (esAdmin() || esEncargado() || esCajero())">
       <div class="drawer-section-title">Inventario y catálogo</div>
       <a routerLink="/inventario" routerLinkActive="active" (click)="cerrarMenu()" class="drawer-link">
         <span>Kardex de stock</span>
@@ -234,7 +241,7 @@
     </div>
 
     <!-- Gestión Global para Admin / Encargado -->
-    <div class="drawer-section" *ngIf="usuarioActual && (esAdmin() || esEncargado())">
+    <div class="drawer-section" *ngIf="usuarioActual && !esPlataforma() && (esAdmin() || esEncargado())">
       <div class="drawer-section-title">Gestión y reportes</div>
       <a routerLink="/dashboard" routerLinkActive="active" (click)="cerrarMenu()" class="drawer-link">
         <span>Dashboard de métricas</span>

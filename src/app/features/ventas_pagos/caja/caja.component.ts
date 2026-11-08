@@ -1,7 +1,8 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
+import { environment } from '../../../../environments/environment';
 import { ReservaTrasladoService } from '../../reservas_traslados/services/reserva-traslado.service';
 import { VentaPresencialService } from '../services/venta-presencial.service';
 import {
@@ -14,7 +15,17 @@ import {
 import { AuthService } from '../../identidad_empresas/services/auth.service';
 import { ProductoService } from '../../catalogo/services/producto.service';
 import { Reserva } from '../../reservas_traslados/models/reserva-traslado.models';
-import { Comprobante, ItemVenta, MetodoCaja, VentaLiquidadaDTO, VentaPresencialLiquidarDTO } from '../models/venta-presencial.models';
+import {
+  Comprobante,
+  ItemVenta,
+  MetodoCaja,
+  VentaLiquidadaDTO,
+  VentaPresencialLiquidarDTO,
+  IniciarVentaPresencialStripeRespuestaDTO,
+  OrdenActivaCajaDTO,
+  LineaVentaPresencialDTO
+} from '../models/venta-presencial.models';
+import { StripeService } from '../services/stripe.service';
 import { VarianteDTO } from '../../catalogo/models/catalogo.models';
 import { formatearErrorApi } from '../../../core/utils/error-handler.util';
 
@@ -25,7 +36,7 @@ import { formatearErrorApi } from '../../../core/utils/error-handler.util';
   templateUrl: './caja.component.html',
   styleUrls: ['./caja.component.css']
 })
-export class CajaComponent implements OnInit {
+export class CajaComponent implements OnInit, OnDestroy {
   readonly Math = Math;
   // Modalidad de operación: 'RESERVA' o 'TURNO_OFFLINE'
   vistaModo: 'RESERVA' | 'TURNO_OFFLINE' = 'TURNO_OFFLINE';
@@ -49,7 +60,6 @@ export class CajaComponent implements OnInit {
   clienteIdPresencial = '';
   efectivoRecibidoPresencial = 0;
   saldoAplicadoPresencial?: number;
-  stripePaymentIntentIdPresencial = '';
   totalPresencialEstimado = 0;
   cambioPresencialEstimado = 0;
 
@@ -63,7 +73,7 @@ export class CajaComponent implements OnInit {
   cuposSolicitados: { variante_id: string; cantidad: number }[] = [];
 
   // Venta Contado Offline
-  lineasVentaOffline: { variante_id: string; cantidad: number; precio_bob: number }[] = [];
+  lineasVentaOffline: { variante_id: string; cantidad: number; precio_bob: number; descuento_bob?: number }[] = [];
   varianteVentaOffline = '';
   cantidadVentaOffline = 1;
   efectivoRecibido = 0;
@@ -73,7 +83,28 @@ export class CajaComponent implements OnInit {
   operacionIdActual: string | null = null;
   medioPagoCaja: 'EFECTIVO' | 'SALDO' | 'STRIPE_TEST' = 'EFECTIVO';
   clienteIdCaja = '';
-  stripePaymentIntentIdCaja = '';
+
+  // Modo Stripe Presencial y Caja (CU19)
+  ordenStripeCaja: OrdenActivaCajaDTO | IniciarVentaPresencialStripeRespuestaDTO | null = null;
+  iniciandoStripeCaja = false;
+  capturandoStripeCaja = false;
+  reanudandoStripeCaja = false;
+  cargandoStripeCaja = false;
+  cardElementCaja: any = null;
+  cardElementCajaValido = false;
+  errorTarjetaCaja: string | null = null;
+
+  ordenStripePresencial: OrdenActivaCajaDTO | IniciarVentaPresencialStripeRespuestaDTO | null = null;
+  iniciandoStripePresencial = false;
+  capturandoStripePresencial = false;
+  reanudandoStripePresencial = false;
+  cargandoStripePresencial = false;
+  cardElementPresencial: any = null;
+  cardElementPresencialValido = false;
+  errorTarjetaPresencial: string | null = null;
+
+  stripeInstance: any = null;
+  private readonly stripeService = inject(StripeService, { optional: true });
 
   // Cierre de Turno y Arqueo
   mostrarDialogoCierre = false;
@@ -98,6 +129,7 @@ export class CajaComponent implements OnInit {
     this.cargarVariantes();
     await this.cargarTurnoActivo();
     await this.actualizarContadorPendientes();
+    this.recuperarOrdenActivaCaja();
   }
 
   cargarVariantes() {
@@ -131,6 +163,7 @@ export class CajaComponent implements OnInit {
               await this.cajaService.guardarTurnoLocal(t);
               this.turnoActivo = t;
               this.turnoPendienteRecuperacion = null;
+              this.recuperarOrdenActivaCaja();
             } catch {
               if (!this.turnoActivo) {
                 this.turnoPendienteRecuperacion = t;
@@ -155,6 +188,185 @@ export class CajaComponent implements OnInit {
   async actualizarContadorPendientes() {
     const pendientes = await this.cajaService.obtenerVentasOfflinePendientes();
     this.ventasPendientesSync = pendientes ? pendientes.length : 0;
+  }
+
+  /**
+   * Recupera la orden de pago Stripe activa (CU19/CU22) tras recarga de página (F5) o reconexión,
+   * sin guardar credenciales ni datos de tarjeta en almacenamiento local.
+   */
+  recuperarOrdenActivaCaja(): void {
+    if (!this.stripeService) return;
+    const u = this.auth.obtenerUsuarioActual();
+    const sucursalId = u?.sucursal_id || (this.turnoActivo ? this.turnoActivo.sucursal_id : undefined);
+    const turnoCajaId = this.turnoActivo?.turno_id || undefined;
+
+    this.stripeService.obtenerOrdenActivaCaja(sucursalId, turnoCajaId).subscribe({
+      next: (orden: OrdenActivaCajaDTO | null) => {
+        if (!orden) return;
+
+        // Manejo de cambio de turno o turno no coincidente
+        if (
+          orden.procedencia === 'TURNO_OFFLINE' &&
+          orden.turno_caja_id &&
+          this.turnoActivo &&
+          orden.turno_caja_id !== this.turnoActivo.turno_id
+        ) {
+          this.error = 'La orden activa recuperada pertenece a otro turno de caja. Debe conciliar el turno anterior antes de continuar.';
+          return;
+        }
+
+        if (orden.procedencia === 'TURNO_OFFLINE') {
+          this.vistaModo = 'TURNO_OFFLINE';
+          this.ordenStripeCaja = orden;
+          this.medioPagoCaja = 'STRIPE_TEST';
+
+          if (orden.lineas && orden.lineas.length) {
+            this.lineasVentaOffline = orden.lineas.map(l => {
+              const item: { variante_id: string; cantidad: number; precio_bob: number; descuento_bob?: number } = {
+                variante_id: l.variante_id,
+                cantidad: l.cantidad,
+                precio_bob: Number(l.precio_unitario_bob) || 0
+              };
+              if (l.descuento_bob && Number(l.descuento_bob) > 0) {
+                item.descuento_bob = Number(l.descuento_bob);
+              }
+              return item;
+            });
+          }
+          if (orden.cliente_id) {
+            this.clienteIdCaja = orden.cliente_id;
+          }
+
+          if (orden.estado_verificacion === 'NO_VERIFICADO_ERROR_PASARELA') {
+            this.error = 'No se pudo verificar el estado en Stripe por problema de red. Reintente la verificación antes de cobrar.';
+          } else if (this.esOrdenProvisional(orden)) {
+            this.desmontarCardElementCaja();
+            if (this.error.includes('No se pudo verificar el estado en Stripe')) {
+              this.error = '';
+            }
+          } else {
+            if (this.error.includes('No se pudo verificar el estado en Stripe')) {
+              this.error = '';
+            }
+            if (orden.estado_orden === 'CAPTURADO') {
+              this.desmontarCardElementCaja();
+            } else if (orden.client_secret) {
+              this.montarCardElementCaja();
+            }
+          }
+        } else {
+          // PRESENCIAL
+          this.vistaModo = 'RESERVA';
+          this.ordenStripePresencial = orden;
+          this.metodo = 'STRIPE_TEST';
+
+          if (orden.lineas && orden.lineas.length) {
+            this.items = orden.lineas.map(l => ({
+              variante_id: l.variante_id,
+              cantidad: l.cantidad
+            }));
+          }
+          if (orden.cliente_id) {
+            this.clienteIdPresencial = orden.cliente_id;
+          }
+
+          if (orden.estado_verificacion === 'NO_VERIFICADO_ERROR_PASARELA') {
+            this.error = 'No se pudo verificar el estado en Stripe por problema de red. Reintente la verificación antes de cobrar.';
+          } else if (this.esOrdenProvisional(orden)) {
+            this.desmontarCardElementPresencial();
+            if (this.error.includes('No se pudo verificar el estado en Stripe')) {
+              this.error = '';
+            }
+          } else {
+            if (this.error.includes('No se pudo verificar el estado en Stripe')) {
+              this.error = '';
+            }
+            if (orden.estado_orden === 'CAPTURADO') {
+              this.desmontarCardElementPresencial();
+            } else if (orden.client_secret) {
+              this.montarCardElementPresencial();
+            }
+          }
+        }
+      },
+      error: () => {
+        // Silenciar fallos de recuperación o 404 para no interrumpir al cajero
+      }
+    });
+  }
+
+  esOrdenProvisional(orden: OrdenActivaCajaDTO | IniciarVentaPresencialStripeRespuestaDTO | null): boolean {
+    if (!orden) return false;
+    return orden.estado_verificacion === 'PROVISIONAL_PENDIENTE_INTENTO' || !orden.stripe_payment_intent_id;
+  }
+
+  reanudarCobroStripeCaja(): void {
+    if (!this.ordenStripeCaja || !this.stripeService) return;
+    this.reanudandoStripeCaja = true;
+    this.error = '';
+    this.mensajeExito = '';
+
+    const ordenPagoId = this.ordenStripeCaja.orden_pago_id;
+    this.stripeService.reanudarOrdenPago(ordenPagoId).subscribe({
+      next: (resp: any) => {
+        this.reanudandoStripeCaja = false;
+        if (this.ordenStripeCaja && this.ordenStripeCaja.orden_pago_id === ordenPagoId) {
+          this.ordenStripeCaja.client_secret = resp.client_secret || this.ordenStripeCaja.client_secret;
+          this.ordenStripeCaja.stripe_payment_intent_id = resp.referencia_externa || resp.stripe_payment_intent_id || resp.payment_intent_id || this.ordenStripeCaja.stripe_payment_intent_id;
+          this.ordenStripeCaja.estado_verificacion = 'VERIFICADO';
+          if (resp.estado || resp.estado_orden) {
+            this.ordenStripeCaja.estado_orden = resp.estado || resp.estado_orden;
+          }
+          this.mensajeExito = 'Orden de pago reanudada exitosamente. Complete los datos de tarjeta para confirmar el cobro.';
+          if (this.ordenStripeCaja.estado_orden === 'CAPTURADO') {
+            this.desmontarCardElementCaja();
+          } else if (this.ordenStripeCaja.client_secret) {
+            this.montarCardElementCaja();
+          }
+        }
+      },
+      error: (err: any) => {
+        this.reanudandoStripeCaja = false;
+        this.error = this.msg(err);
+      }
+    });
+  }
+
+  reanudarCobroStripePresencial(): void {
+    if (!this.ordenStripePresencial || !this.stripeService) return;
+    this.reanudandoStripePresencial = true;
+    this.error = '';
+    this.mensajeExito = '';
+
+    const ordenPagoId = this.ordenStripePresencial.orden_pago_id;
+    this.stripeService.reanudarOrdenPago(ordenPagoId).subscribe({
+      next: (resp: any) => {
+        this.reanudandoStripePresencial = false;
+        if (this.ordenStripePresencial && this.ordenStripePresencial.orden_pago_id === ordenPagoId) {
+          this.ordenStripePresencial.client_secret = resp.client_secret || this.ordenStripePresencial.client_secret;
+          this.ordenStripePresencial.stripe_payment_intent_id = resp.referencia_externa || resp.stripe_payment_intent_id || resp.payment_intent_id || this.ordenStripePresencial.stripe_payment_intent_id;
+          this.ordenStripePresencial.estado_verificacion = 'VERIFICADO';
+          if (resp.estado || resp.estado_orden) {
+            this.ordenStripePresencial.estado_orden = resp.estado || resp.estado_orden;
+          }
+          this.mensajeExito = 'Orden de pago reanudada exitosamente. Complete los datos de tarjeta para confirmar el cobro.';
+          if (this.ordenStripePresencial.estado_orden === 'CAPTURADO') {
+            this.desmontarCardElementPresencial();
+          } else if (this.ordenStripePresencial.client_secret) {
+            this.montarCardElementPresencial();
+          }
+        }
+      },
+      error: (err: any) => {
+        this.reanudandoStripePresencial = false;
+        this.error = this.msg(err);
+      }
+    });
+  }
+
+  reintentarVerificacionOrdenActiva(): void {
+    this.error = '';
+    this.recuperarOrdenActivaCaja();
   }
 
   // --- Habilitación de Turno y Cupos ---
@@ -236,6 +448,7 @@ export class CajaComponent implements OnInit {
       this.cuposSolicitados = [];
       this.mensajeExito = `Caja ${turno.caja_codigo} habilitada exitosamente con vigencia de 8 horas.`;
       this.error = '';
+      this.recuperarOrdenActivaCaja();
       return true;
     } catch (errPersistencia) {
       this.turnoActivo = null;
@@ -316,6 +529,285 @@ export class CajaComponent implements OnInit {
     }
   }
 
+  async obtenerOInicializarStripe(): Promise<any> {
+    if (this.stripeInstance) return this.stripeInstance;
+    if (!this.stripeService) {
+      throw new Error('El servicio de pasarela de pagos Stripe no está disponible.');
+    }
+    try {
+      const StripeConstructor = (await this.stripeService.cargarStripeJs()) as (key: string) => any;
+      if (typeof StripeConstructor === 'function') {
+        this.stripeInstance = StripeConstructor(environment.stripePublicKey);
+        return this.stripeInstance;
+      }
+    } catch {
+      const win = typeof window !== 'undefined' ? (window as any) : {};
+      if (typeof win['Stripe'] === 'function') {
+        this.stripeInstance = win['Stripe'](environment.stripePublicKey);
+        return this.stripeInstance;
+      }
+    }
+    throw new Error('No se pudo cargar la pasarela segura de Stripe. Verifica tu conexión.');
+  }
+
+  async montarCardElementCaja(): Promise<void> {
+    this.desmontarCardElementCaja();
+    this.cardElementCajaValido = false;
+    this.errorTarjetaCaja = null;
+    this.cargandoStripeCaja = true;
+
+    try {
+      const stripe = await this.obtenerOInicializarStripe();
+      const elements = stripe.elements();
+      this.cardElementCaja = elements.create('card', {
+        hidePostalCode: true,
+        style: {
+          base: {
+            fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+            fontSize: '16px',
+            color: '#1c1b1f',
+            '::placeholder': { color: '#79747e' }
+          },
+          invalid: {
+            color: '#b3261e',
+            iconColor: '#b3261e'
+          }
+        }
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      const mountSelector = '#stripe-card-element-caja';
+      const container = typeof document !== 'undefined' ? document.querySelector(mountSelector) : null;
+      if (!container) {
+        throw new Error('No se encontró el contenedor de tarjeta para caja.');
+      }
+
+      this.cardElementCaja.mount(mountSelector);
+      this.cardElementCaja.on('change', (event: any) => {
+        this.cardElementCajaValido = !!(event && event.complete && !event.error);
+        this.errorTarjetaCaja = event?.error?.message || null;
+      });
+    } catch (err: any) {
+      this.errorTarjetaCaja = err?.message || 'Error al inicializar el campo seguro de tarjeta.';
+      this.cardElementCajaValido = false;
+    } finally {
+      this.cargandoStripeCaja = false;
+    }
+  }
+
+  desmontarCardElementCaja(): void {
+    if (this.cardElementCaja) {
+      try {
+        if (typeof this.cardElementCaja.destroy === 'function') {
+          this.cardElementCaja.destroy();
+        }
+      } catch {}
+      this.cardElementCaja = null;
+    }
+    this.cardElementCajaValido = false;
+    this.errorTarjetaCaja = null;
+  }
+
+  iniciarStripeCaja(): void {
+    if (!this.turnoActivo) {
+      this.error = 'No hay un turno de caja activo para procesar ventas.';
+      return;
+    }
+    if (!this.lineasVentaOffline.length) {
+      this.error = 'Agregue al menos una prenda a la venta.';
+      return;
+    }
+    this.iniciandoStripeCaja = true;
+    this.error = '';
+
+    const u = this.auth.obtenerUsuarioActual();
+    const sucursalId = u?.sucursal_id || this.turnoActivo.sucursal_id;
+
+    this.api.iniciarVentaPresencialStripe({
+      sucursal_id: sucursalId,
+      cliente_id: this.clienteIdCaja.trim() || null,
+      turno_caja_id: this.turnoActivo.turno_id,
+      lineas: this.lineasVentaOffline.map(l => ({
+        variante_id: l.variante_id,
+        cantidad: l.cantidad,
+        precio_unitario_bob: l.precio_bob,
+        descuento_bob: 0
+      }))
+    }).subscribe({
+      next: resp => {
+        this.ordenStripeCaja = resp;
+        this.iniciandoStripeCaja = false;
+        if (resp && resp.estado_orden !== 'CAPTURADO') {
+          this.montarCardElementCaja();
+        }
+      },
+      error: err => {
+        this.error = this.msg(err);
+        this.iniciandoStripeCaja = false;
+      }
+    });
+  }
+
+  async capturarStripeCaja(): Promise<void> {
+    if (!this.ordenStripeCaja || this.capturandoStripeCaja) return;
+    this.capturandoStripeCaja = true;
+    this.error = '';
+    this.errorTarjetaCaja = null;
+
+    if (!this.stripeService) {
+      this.error = 'El servicio de pasarela de pagos Stripe no está disponible.';
+      this.capturandoStripeCaja = false;
+      return;
+    }
+
+    const orden = this.ordenStripeCaja;
+
+    if (orden.estado_orden === 'CAPTURADO') {
+      this.capturandoStripeCaja = false;
+      return;
+    }
+
+    if (!this.cardElementCaja && orden.estado_orden !== 'REQUIERE_ACCION_CLIENTE') {
+      this.errorTarjetaCaja = 'Complete los datos de la tarjeta antes de confirmar.';
+      this.error = this.errorTarjetaCaja;
+      this.capturandoStripeCaja = false;
+      return;
+    }
+
+    try {
+      const stripe = await this.obtenerOInicializarStripe();
+
+      if (orden.estado_orden === 'REQUIERE_ACCION_CLIENTE' && !this.cardElementCaja) {
+        this.stripeService.continuarAccion(orden.orden_pago_id, {
+          payment_intent_id: orden.stripe_payment_intent_id || ''
+        }).subscribe({
+          next: accResp => {
+            if (accResp && accResp.estado === 'CAPTURADO') {
+              if (this.ordenStripeCaja) this.ordenStripeCaja.estado_orden = 'CAPTURADO';
+              this.mensajeExito = 'Pago con tarjeta capturado exitosamente.';
+            } else {
+              if (this.ordenStripeCaja) this.ordenStripeCaja.estado_orden = (accResp?.estado as any) || 'PENDIENTE';
+              this.error = `La orden continúa en estado ${accResp?.estado || 'PENDIENTE'}.`;
+            }
+            this.capturandoStripeCaja = false;
+          },
+          error: accErr => {
+            if (this.ordenStripeCaja) this.ordenStripeCaja.estado_orden = 'FALLIDO';
+            this.error = this.msg(accErr);
+            this.capturandoStripeCaja = false;
+          }
+        });
+        return;
+      }
+
+      if (!orden.client_secret) {
+        this.error = 'No se encontró el secreto de cliente para procesar la tarjeta.';
+        this.capturandoStripeCaja = false;
+        return;
+      }
+
+      const confirmResult = await stripe.confirmCardPayment(orden.client_secret, {
+        payment_method: {
+          card: this.cardElementCaja
+        }
+      });
+
+      if (confirmResult?.error) {
+        const msgError = confirmResult.error.message || 'La tarjeta fue rechazada por la pasarela de pagos.';
+        this.errorTarjetaCaja = msgError;
+        this.error = msgError;
+        this.capturandoStripeCaja = false;
+        return;
+      }
+
+      const pi = confirmResult?.paymentIntent;
+      if (pi?.status === 'requires_action') {
+        this.ordenStripeCaja.estado_orden = 'REQUIERE_ACCION_CLIENTE';
+        this.error = 'La tarjeta requiere verificación 3D Secure / SCA adicional.';
+        this.capturandoStripeCaja = false;
+        return;
+      }
+
+      if (pi?.status === 'succeeded' || pi?.status === 'requires_capture') {
+        this.stripeService.confirmarOrdenPago(orden.orden_pago_id).subscribe({
+          next: confResp => {
+            if (confResp && confResp.estado === 'CAPTURADO') {
+              if (this.ordenStripeCaja) {
+                this.ordenStripeCaja.estado_orden = 'CAPTURADO';
+              }
+              this.desmontarCardElementCaja();
+              this.mensajeExito = 'Pago con tarjeta capturado y verificado centralmente con éxito.';
+            } else {
+              this.error = `La orden fue procesada por Stripe pero el backend reporta estado: ${confResp?.estado || 'PENDIENTE'}. Puede reintentar la confirmación.`;
+            }
+            this.capturandoStripeCaja = false;
+          },
+          error: confErr => {
+            this.error = `El cobro fue aceptado por Stripe pero ocurrió un error al confirmar con el servidor: ${this.msg(confErr)}. No repita el cobro; reintente la confirmación.`;
+            this.capturandoStripeCaja = false;
+          }
+        });
+      } else {
+        const estadoInesperado = pi?.status || 'desconocido';
+        this.error = `Stripe reportó un estado no concluido: ${estadoInesperado}. Verifique el método de pago.`;
+        this.capturandoStripeCaja = false;
+      }
+    } catch (err: any) {
+      this.error = err?.message || 'Error inesperado al procesar la tarjeta con Stripe.';
+      this.capturandoStripeCaja = false;
+    }
+  }
+
+  cancelarStripeCaja(): void {
+    if (!this.ordenStripeCaja) return;
+    const orden = this.ordenStripeCaja;
+
+    if (orden.estado_orden === 'CAPTURADO') {
+      this.error = 'No se puede cancelar una orden con cobro ya capturado en la pasarela. Debe liquidar la venta o solicitar un reembolso formal.';
+      return;
+    }
+
+    if (this.stripeService && (orden.estado_orden === 'PENDIENTE' || orden.estado_orden === 'REQUIERE_ACCION_CLIENTE')) {
+      this.procesando = true;
+      this.stripeService.cancelarOrdenPago(orden.orden_pago_id).subscribe({
+        next: () => {
+          this.desmontarCardElementCaja();
+          this.ordenStripeCaja = null;
+          this.procesando = false;
+        },
+        error: err => {
+          // H3: Preservar ordenStripeCaja visible ante fallos (409/502/timeout). No desmontar CardElement ni anular orden.
+          this.error = this.msg(err);
+          this.procesando = false;
+        }
+      });
+      return;
+    }
+
+    this.desmontarCardElementCaja();
+    this.ordenStripeCaja = null;
+  }
+
+  reintentarConfirmacionStripeCaja(): void {
+    if (!this.ordenStripeCaja || !this.stripeService) return;
+    this.capturandoStripeCaja = true;
+    this.stripeService.confirmarOrdenPago(this.ordenStripeCaja.orden_pago_id).subscribe({
+      next: resp => {
+        if (resp && resp.estado === 'CAPTURADO') {
+          if (this.ordenStripeCaja) this.ordenStripeCaja.estado_orden = 'CAPTURADO';
+          this.desmontarCardElementCaja();
+          this.mensajeExito = 'Pago confirmado centralmente.';
+        }
+        this.capturandoStripeCaja = false;
+      },
+      error: err => {
+        this.error = this.msg(err);
+        this.capturandoStripeCaja = false;
+      }
+    });
+  }
+
   async cobrarVentaContado() {
     this.error = '';
     this.mensajeExito = '';
@@ -338,34 +830,51 @@ export class CajaComponent implements OnInit {
         this.error = 'La liquidación con saldo requiere indicar el identificador del cliente.';
         return;
       }
-      if (this.medioPagoCaja === 'STRIPE_TEST' && !this.stripePaymentIntentIdCaja.trim()) {
-        this.error = 'La liquidación con tarjeta requiere el identificador de la intención de pago Stripe capturada.';
-        return;
+      if (this.medioPagoCaja === 'STRIPE_TEST') {
+        if (!this.ordenStripeCaja) {
+          this.error = 'Debe iniciar el cobro con tarjeta Stripe antes de liquidar.';
+          return;
+        }
+        if (this.ordenStripeCaja.estado_orden !== 'CAPTURADO') {
+          this.error = 'La orden de pago Stripe debe estar en estado CAPTURADO antes de liquidar.';
+          return;
+        }
       }
 
       this.procesando = true;
       const u = this.auth.obtenerUsuarioActual();
-      const sucursalId = u?.sucursal_id || this.turnoActivo.sucursal_id;
+      const sucursalId = u?.sucursal_id || this.turnoActivo?.sucursal_id || (this.ordenStripeCaja as OrdenActivaCajaDTO)?.sucursal_id || '';
 
       const dto: VentaPresencialLiquidarDTO = {
+        venta_id: this.ordenStripeCaja?.venta_id,
+        orden_pago_id: this.ordenStripeCaja?.orden_pago_id,
         sucursal_id: sucursalId,
-        lineas: this.lineasVentaOffline.map(l => ({
-          variante_id: l.variante_id,
-          cantidad: l.cantidad
-        })),
+        lineas: this.lineasVentaOffline.map(l => {
+          const linea: LineaVentaPresencialDTO = {
+            variante_id: l.variante_id,
+            cantidad: l.cantidad,
+            precio_unitario_bob: l.precio_bob
+          };
+          if (l.descuento_bob && l.descuento_bob > 0) {
+            linea.descuento_bob = l.descuento_bob;
+          }
+          return linea;
+        }),
         medio_pago: this.medioPagoCaja,
-        cliente_id: this.clienteIdCaja.trim() || undefined,
-        stripe_payment_intent_id: this.medioPagoCaja === 'STRIPE_TEST' ? this.stripePaymentIntentIdCaja.trim() : undefined,
-        turno_caja_id: this.turnoActivo.turno_id
+        cliente_id: this.clienteIdCaja.trim() || (this.ordenStripeCaja as OrdenActivaCajaDTO)?.cliente_id || undefined,
+        stripe_payment_intent_id: this.ordenStripeCaja?.stripe_payment_intent_id,
+        turno_caja_id: this.turnoActivo?.turno_id || (this.ordenStripeCaja as OrdenActivaCajaDTO)?.turno_caja_id || undefined
       };
 
       this.api.liquidarVentaPresencial(dto).subscribe({
         next: async resp => {
-          for (const l of this.lineasVentaOffline) {
-            const c = this.turnoActivo!.cupos.find(cupo => cupo.variante_id === l.variante_id);
-            if (c) c.consumido += l.cantidad;
+          if (this.turnoActivo?.cupos) {
+            for (const l of this.lineasVentaOffline) {
+              const c = this.turnoActivo.cupos.find(cupo => cupo.variante_id === l.variante_id);
+              if (c) c.consumido += l.cantidad;
+            }
+            await this.cajaService.guardarTurnoLocal(this.turnoActivo);
           }
-          await this.cajaService.guardarTurnoLocal(this.turnoActivo!);
 
           this.comprobanteOffline = {
             operacion_id: resp.venta_id,
@@ -381,6 +890,8 @@ export class CajaComponent implements OnInit {
             cambio: Number(resp.cambio_entregado_bob || 0),
             esOffline: false
           };
+          this.desmontarCardElementCaja();
+          this.ordenStripeCaja = null;
           this.limpiarFormularioVentaOffline();
           this.procesando = false;
         },
@@ -489,6 +1000,10 @@ export class CajaComponent implements OnInit {
       this.limpiarFormularioVentaOffline();
       this.procesando = false;
     }
+  }
+
+  liquidarVentaOffline(): Promise<void> {
+    return this.cobrarVentaContado();
   }
 
   limpiarFormularioVentaOffline() {
@@ -779,6 +1294,258 @@ export class CajaComponent implements OnInit {
     this.items.splice(i, 1);
   }
 
+  async montarCardElementPresencial(): Promise<void> {
+    this.desmontarCardElementPresencial();
+    this.cardElementPresencialValido = false;
+    this.errorTarjetaPresencial = null;
+    this.cargandoStripePresencial = true;
+
+    try {
+      const stripe = await this.obtenerOInicializarStripe();
+      const elements = stripe.elements();
+      this.cardElementPresencial = elements.create('card', {
+        hidePostalCode: true,
+        style: {
+          base: {
+            fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+            fontSize: '16px',
+            color: '#1c1b1f',
+            '::placeholder': { color: '#79747e' }
+          },
+          invalid: {
+            color: '#b3261e',
+            iconColor: '#b3261e'
+          }
+        }
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      const mountSelector = '#stripe-card-element-presencial';
+      const container = typeof document !== 'undefined' ? document.querySelector(mountSelector) : null;
+      if (!container) {
+        throw new Error('No se encontró el contenedor de tarjeta para venta presencial.');
+      }
+
+      this.cardElementPresencial.mount(mountSelector);
+      this.cardElementPresencial.on('change', (event: any) => {
+        this.cardElementPresencialValido = !!(event && event.complete && !event.error);
+        this.errorTarjetaPresencial = event?.error?.message || null;
+      });
+    } catch (err: any) {
+      this.errorTarjetaPresencial = err?.message || 'Error al inicializar el campo seguro de tarjeta.';
+      this.cardElementPresencialValido = false;
+    } finally {
+      this.cargandoStripePresencial = false;
+    }
+  }
+
+  desmontarCardElementPresencial(): void {
+    if (this.cardElementPresencial) {
+      try {
+        if (typeof this.cardElementPresencial.destroy === 'function') {
+          this.cardElementPresencial.destroy();
+        }
+      } catch {}
+      this.cardElementPresencial = null;
+    }
+    this.cardElementPresencialValido = false;
+    this.errorTarjetaPresencial = null;
+  }
+
+  iniciarStripePresencial(): void {
+    if (!this.items.length) {
+      this.error = 'Debe agregar al menos una prenda para procesar la venta.';
+      return;
+    }
+    this.iniciandoStripePresencial = true;
+    this.error = '';
+
+    const u = this.auth.obtenerUsuarioActual();
+    const sucursalId = u?.sucursal_id || (this.turnoActivo ? this.turnoActivo.sucursal_id : '');
+
+    this.api.iniciarVentaPresencialStripe({
+      sucursal_id: sucursalId,
+      cliente_id: this.clienteIdPresencial.trim() || null,
+      turno_caja_id: this.turnoActivo?.turno_id || null,
+      lineas: this.items.map(i => ({
+        variante_id: i.variante_id,
+        cantidad: i.cantidad
+      }))
+    }).subscribe({
+      next: resp => {
+        this.ordenStripePresencial = resp;
+        this.iniciandoStripePresencial = false;
+        if (resp && resp.estado_orden !== 'CAPTURADO') {
+          this.montarCardElementPresencial();
+        }
+      },
+      error: err => {
+        this.error = this.msg(err);
+        this.iniciandoStripePresencial = false;
+      }
+    });
+  }
+
+  async capturarStripePresencial(): Promise<void> {
+    if (!this.ordenStripePresencial || this.capturandoStripePresencial) return;
+    this.capturandoStripePresencial = true;
+    this.error = '';
+    this.errorTarjetaPresencial = null;
+
+    if (!this.stripeService) {
+      this.error = 'El servicio de pasarela de pagos Stripe no está disponible.';
+      this.capturandoStripePresencial = false;
+      return;
+    }
+
+    const orden = this.ordenStripePresencial;
+
+    if (orden.estado_orden === 'CAPTURADO') {
+      this.capturandoStripePresencial = false;
+      return;
+    }
+
+    if (!this.cardElementPresencial && orden.estado_orden !== 'REQUIERE_ACCION_CLIENTE') {
+      this.errorTarjetaPresencial = 'Complete los datos de la tarjeta antes de confirmar.';
+      this.error = this.errorTarjetaPresencial;
+      this.capturandoStripePresencial = false;
+      return;
+    }
+
+    try {
+      const stripe = await this.obtenerOInicializarStripe();
+
+      if (orden.estado_orden === 'REQUIERE_ACCION_CLIENTE' && !this.cardElementPresencial) {
+        this.stripeService.continuarAccion(orden.orden_pago_id, {
+          payment_intent_id: orden.stripe_payment_intent_id || ''
+        }).subscribe({
+          next: accResp => {
+            if (accResp && accResp.estado === 'CAPTURADO') {
+              if (this.ordenStripePresencial) this.ordenStripePresencial.estado_orden = 'CAPTURADO';
+              this.mensajeExito = 'Pago con tarjeta capturado exitosamente.';
+            } else {
+              if (this.ordenStripePresencial) this.ordenStripePresencial.estado_orden = (accResp?.estado as any) || 'PENDIENTE';
+              this.error = `La orden continúa en estado ${accResp?.estado || 'PENDIENTE'}.`;
+            }
+            this.capturandoStripePresencial = false;
+          },
+          error: accErr => {
+            if (this.ordenStripePresencial) this.ordenStripePresencial.estado_orden = 'FALLIDO';
+            this.error = this.msg(accErr);
+            this.capturandoStripePresencial = false;
+          }
+        });
+        return;
+      }
+
+      if (!orden.client_secret) {
+        this.error = 'No se encontró el secreto de cliente para procesar la tarjeta.';
+        this.capturandoStripePresencial = false;
+        return;
+      }
+
+      const confirmResult = await stripe.confirmCardPayment(orden.client_secret, {
+        payment_method: {
+          card: this.cardElementPresencial
+        }
+      });
+
+      if (confirmResult?.error) {
+        const msgError = confirmResult.error.message || 'La tarjeta fue rechazada por la pasarela de pagos.';
+        this.errorTarjetaPresencial = msgError;
+        this.error = msgError;
+        this.capturandoStripePresencial = false;
+        return;
+      }
+
+      const pi = confirmResult?.paymentIntent;
+      if (pi?.status === 'requires_action') {
+        this.ordenStripePresencial.estado_orden = 'REQUIERE_ACCION_CLIENTE';
+        this.error = 'La tarjeta requiere verificación 3D Secure / SCA adicional.';
+        this.capturandoStripePresencial = false;
+        return;
+      }
+
+      if (pi?.status === 'succeeded' || pi?.status === 'requires_capture') {
+        this.stripeService.confirmarOrdenPago(orden.orden_pago_id).subscribe({
+          next: confResp => {
+            if (confResp && confResp.estado === 'CAPTURADO') {
+              if (this.ordenStripePresencial) {
+                this.ordenStripePresencial.estado_orden = 'CAPTURADO';
+              }
+              this.desmontarCardElementPresencial();
+              this.mensajeExito = 'Pago con tarjeta capturado y verificado centralmente con éxito.';
+            } else {
+              this.error = `La orden fue procesada por Stripe pero el backend reporta estado: ${confResp?.estado || 'PENDIENTE'}. Puede reintentar la confirmación.`;
+            }
+            this.capturandoStripePresencial = false;
+          },
+          error: confErr => {
+            this.error = `El cobro fue aceptado por Stripe pero ocurrió un error al confirmar con el servidor: ${this.msg(confErr)}. No repita el cobro; reintente la confirmación.`;
+            this.capturandoStripePresencial = false;
+          }
+        });
+      } else {
+        const estadoInesperado = pi?.status || 'desconocido';
+        this.error = `Stripe reportó un estado no concluido: ${estadoInesperado}. Verifique el método de pago.`;
+        this.capturandoStripePresencial = false;
+      }
+    } catch (err: any) {
+      this.error = err?.message || 'Error inesperado al procesar la tarjeta con Stripe.';
+      this.capturandoStripePresencial = false;
+    }
+  }
+
+  cancelarStripePresencial(): void {
+    if (!this.ordenStripePresencial) return;
+    const orden = this.ordenStripePresencial;
+
+    if (orden.estado_orden === 'CAPTURADO') {
+      this.error = 'No se puede cancelar una orden con cobro ya capturado en la pasarela. Debe liquidar la venta o solicitar un reembolso formal.';
+      return;
+    }
+
+    if (this.stripeService && (orden.estado_orden === 'PENDIENTE' || orden.estado_orden === 'REQUIERE_ACCION_CLIENTE')) {
+      this.procesando = true;
+      this.stripeService.cancelarOrdenPago(orden.orden_pago_id).subscribe({
+        next: () => {
+          this.desmontarCardElementPresencial();
+          this.ordenStripePresencial = null;
+          this.procesando = false;
+        },
+        error: err => {
+          // H3: Preservar ordenStripePresencial visible ante fallos (409/502/timeout). No desmontar CardElement ni anular orden.
+          this.error = this.msg(err);
+          this.procesando = false;
+        }
+      });
+      return;
+    }
+
+    this.desmontarCardElementPresencial();
+    this.ordenStripePresencial = null;
+  }
+
+  reintentarConfirmacionStripePresencial(): void {
+    if (!this.ordenStripePresencial || !this.stripeService) return;
+    this.capturandoStripePresencial = true;
+    this.stripeService.confirmarOrdenPago(this.ordenStripePresencial.orden_pago_id).subscribe({
+      next: resp => {
+        if (resp && resp.estado === 'CAPTURADO') {
+          if (this.ordenStripePresencial) this.ordenStripePresencial.estado_orden = 'CAPTURADO';
+          this.desmontarCardElementPresencial();
+          this.mensajeExito = 'Pago confirmado centralmente.';
+        }
+        this.capturandoStripePresencial = false;
+      },
+      error: err => {
+        this.error = this.msg(err);
+        this.capturandoStripePresencial = false;
+      }
+    });
+  }
+
   v(id: string) {
     return this.variantes.find(x => x.id === id)?.sku || (id ? 'Prenda' : '—');
   }
@@ -805,25 +1572,51 @@ export class CajaComponent implements OnInit {
         this.procesando = false;
         return;
       }
-      if (this.metodo === 'STRIPE_TEST' && !this.stripePaymentIntentIdPresencial.trim()) {
-        this.error = 'La liquidación con tarjeta requiere el identificador de la intención de pago Stripe capturada.';
-        this.procesando = false;
-        return;
+      if (this.metodo === 'STRIPE_TEST') {
+        if (!this.ordenStripePresencial) {
+          this.error = 'Debe iniciar el cobro con tarjeta Stripe antes de liquidar.';
+          this.procesando = false;
+          return;
+        }
+        if (this.ordenStripePresencial.estado_orden !== 'CAPTURADO') {
+          this.error = 'La orden de pago Stripe debe estar en estado CAPTURADO antes de liquidar.';
+          this.procesando = false;
+          return;
+        }
       }
 
+      const sucursalId = u?.sucursal_id || this.turnoActivo?.sucursal_id || (this.ordenStripePresencial as OrdenActivaCajaDTO)?.sucursal_id || '';
       const dto: VentaPresencialLiquidarDTO = {
-        sucursal_id: u.sucursal_id,
-        lineas: this.items.map(i => ({
-          variante_id: i.variante_id,
-          cantidad: i.cantidad
-          // No asumir precio ni descuento estático; el backend calcula precios y promociones oficiales
-        })),
+        venta_id: this.ordenStripePresencial?.venta_id,
+        orden_pago_id: this.ordenStripePresencial?.orden_pago_id,
+        sucursal_id: sucursalId,
+        lineas: this.items.map(i => {
+          const linea: LineaVentaPresencialDTO = {
+            variante_id: i.variante_id,
+            cantidad: i.cantidad
+          };
+          const lineaRecuperada = (this.ordenStripePresencial as OrdenActivaCajaDTO)?.lineas?.find(
+            l => l.variante_id === i.variante_id
+          );
+          if (lineaRecuperada) {
+            linea.precio_unitario_bob = Number(lineaRecuperada.precio_unitario_bob) || 0;
+            if (lineaRecuperada.descuento_bob && Number(lineaRecuperada.descuento_bob) > 0) {
+              linea.descuento_bob = Number(lineaRecuperada.descuento_bob);
+            }
+          } else if (i.precio_unitario_bob !== undefined) {
+            linea.precio_unitario_bob = i.precio_unitario_bob;
+            if (i.descuento_bob !== undefined && i.descuento_bob > 0) {
+              linea.descuento_bob = i.descuento_bob;
+            }
+          }
+          return linea;
+        }),
         medio_pago: this.metodo,
-        cliente_id: this.clienteIdPresencial.trim() || undefined,
+        cliente_id: this.clienteIdPresencial.trim() || (this.ordenStripePresencial as OrdenActivaCajaDTO)?.cliente_id || undefined,
         efectivo_recibido_bob: this.metodo === 'EFECTIVO' ? (this.efectivoRecibidoPresencial || undefined) : undefined,
         saldo_aplicado_bob: this.metodo === 'SALDO' ? this.saldoAplicadoPresencial : undefined,
-        stripe_payment_intent_id: this.metodo === 'STRIPE_TEST' ? this.stripePaymentIntentIdPresencial.trim() : undefined,
-        turno_caja_id: this.turnoActivo?.turno_id
+        stripe_payment_intent_id: this.ordenStripePresencial?.stripe_payment_intent_id,
+        turno_caja_id: this.turnoActivo?.turno_id || (this.ordenStripePresencial as OrdenActivaCajaDTO)?.turno_caja_id || undefined
       };
 
       this.api.liquidarVentaPresencial(dto).subscribe({
@@ -835,6 +1628,8 @@ export class CajaComponent implements OnInit {
               this.comprobante = c;
               this.procesando = false;
               this.items = [];
+              this.desmontarCardElementPresencial();
+              this.ordenStripePresencial = null;
               this.mensajeExito = `Venta ${v.numero} liquidada exitosamente. Total confirmado por servidor: Bs ${v.total_bob}.`;
             },
             error: () => {
@@ -863,6 +1658,8 @@ export class CajaComponent implements OnInit {
               };
               this.procesando = false;
               this.items = [];
+              this.desmontarCardElementPresencial();
+              this.ordenStripePresencial = null;
               this.mensajeExito = `Venta ${v.numero} liquidada exitosamente. Total confirmado por servidor: Bs ${v.total_bob}.`;
             }
           });
@@ -902,8 +1699,21 @@ export class CajaComponent implements OnInit {
     });
   }
 
+  liquidar(): void {
+    this.vender();
+  }
+
   calcularTotalesPresenciales() {
     const subtotal = this.items.reduce((acc, it) => {
+      const lineaRecuperada = (this.ordenStripePresencial as OrdenActivaCajaDTO)?.lineas?.find(
+        l => l.variante_id === it.variante_id
+      );
+      if (lineaRecuperada) {
+        return acc + ((Number(lineaRecuperada.precio_unitario_bob) || 0) * it.cantidad);
+      }
+      if (it.precio_unitario_bob !== undefined) {
+        return acc + (it.precio_unitario_bob * it.cantidad);
+      }
       const v = this.variantes.find(x => x.id === it.variante_id);
       const precio = v ? Number(v.precio) : 0;
       return acc + (precio * it.cantidad);
@@ -916,7 +1726,24 @@ export class CajaComponent implements OnInit {
     }
   }
 
+  cambiarModo(modo: 'RESERVA' | 'TURNO_OFFLINE'): void {
+    if (this.vistaModo === modo) return;
+    this.desmontarCardElementCaja();
+    this.desmontarCardElementPresencial();
+    this.vistaModo = modo;
+    this.error = '';
+    this.mensajeExito = '';
+    this.recuperarOrdenActivaCaja();
+  }
+
+  ngOnDestroy(): void {
+    this.desmontarCardElementCaja();
+    this.desmontarCardElementPresencial();
+  }
+
   nueva() {
+    this.desmontarCardElementPresencial();
+    this.ordenStripePresencial = null;
     this.reserva = undefined;
     this.comprobante = undefined;
     this.ventaLiquidada = undefined;
@@ -925,7 +1752,6 @@ export class CajaComponent implements OnInit {
     this.error = '';
     this.mensajeExito = '';
     this.clienteIdPresencial = '';
-    this.stripePaymentIntentIdPresencial = '';
     this.efectivoRecibidoPresencial = 0;
   }
 

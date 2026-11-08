@@ -29,3 +29,12 @@ export const authGuard: CanActivateFn = (route, state) => {
 
   return true;
 };
+
+export const platformHomeGuard: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  const usuario = auth.obtenerUsuarioActual();
+  if (usuario && !usuario.empresa_id && ['SUPERADMIN', 'ADMINISTRADOR_PLATAFORMA', 'ADMINISTRADOR_SISTEMA'].includes(usuario.rol)) {
+    return inject(Router).createUrlTree(['/plataforma']);
+  }
+  return true;
+};

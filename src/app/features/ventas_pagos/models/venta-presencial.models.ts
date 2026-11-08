@@ -9,13 +9,65 @@ export interface LineaVentaPresencialDTO {
   descuento_bob?: number;
 }
 
+export interface IniciarVentaPresencialStripeDTO {
+  sucursal_id: string;
+  cliente_id?: string | null;
+  turno_caja_id?: string | null;
+  lineas: LineaVentaPresencialDTO[];
+}
+
+export interface IniciarVentaPresencialStripeRespuestaDTO {
+  venta_id: string;
+  orden_pago_id: string;
+  stripe_payment_intent_id?: string | null;
+  client_secret?: string | null;
+  monto_bob: string;
+  monto_usd: string;
+  centavos_usd: number;
+  tasa_bob_por_usd: string;
+  estado_orden: 'PENDIENTE' | 'REQUIERE_ACCION_CLIENTE' | 'CAPTURADO' | 'FALLIDO' | 'CANCELADO';
+  estado_verificacion?: 'VERIFICADO' | 'NO_VERIFICADO_ERROR_PASARELA' | 'PROVISIONAL_PENDIENTE_INTENTO';
+  cliente_id?: string | null;
+  turno_caja_id?: string | null;
+  sucursal_id?: string;
+}
+
+export interface LineaRecuperadaCajaDTO {
+  variante_id: string;
+  cantidad: number;
+  precio_unitario_bob: string;
+  descuento_bob?: string;
+  sku?: string;
+  nombre_producto?: string;
+}
+
+export interface OrdenActivaCajaDTO {
+  orden_pago_id: string;
+  venta_id: string;
+  stripe_payment_intent_id: string | null;
+  client_secret?: string | null;
+  monto_bob: string;
+  monto_usd: string;
+  centavos_usd: number;
+  tasa_bob_por_usd: string;
+  estado_orden: 'PENDIENTE' | 'REQUIERE_ACCION_CLIENTE' | 'CAPTURADO' | 'FALLIDO' | 'CANCELADO';
+  sucursal_id: string;
+  turno_caja_id?: string | null;
+  cliente_id?: string | null;
+  procedencia: 'TURNO_OFFLINE' | 'PRESENCIAL';
+  lineas: LineaRecuperadaCajaDTO[];
+  estado_verificacion: 'VERIFICADO' | 'NO_VERIFICADO_ERROR_PASARELA' | 'PROVISIONAL_PENDIENTE_INTENTO';
+}
+
 export interface VentaPresencialLiquidarDTO {
+  venta_id?: string;
+  orden_pago_id?: string;
   sucursal_id: string;
   lineas: LineaVentaPresencialDTO[];
   medio_pago: MedioPagoPresencial;
   efectivo_recibido_bob?: number;
   saldo_aplicado_bob?: number;
-  stripe_payment_intent_id?: string;
+  stripe_payment_intent_id?: string | null;
   cliente_id?: string;
   turno_caja_id?: string;
   reserva_id?: string;
@@ -55,6 +107,8 @@ export interface ItemVenta {
   detalle_reserva_id?: string;
   variante_id: string;
   cantidad: number;
+  precio_unitario_bob?: number;
+  descuento_bob?: number;
 }
 
 export interface VentaCrear {

@@ -11,13 +11,27 @@ import {
   Venta,
   VentaCrear,
   VentaPresencialLiquidarDTO,
-  VentaLiquidadaDTO
+  VentaLiquidadaDTO,
+  IniciarVentaPresencialStripeDTO,
+  IniciarVentaPresencialStripeRespuestaDTO
 } from '../models/venta-presencial.models';
 
 @Injectable({ providedIn: 'root' })
 export class VentaPresencialService {
   private readonly api = environment.apiUrl;
   constructor(private http: HttpClient) {}
+
+  iniciarVentaPresencialStripe(
+    dto: IniciarVentaPresencialStripeDTO,
+    idempotencyKey?: string
+  ): Observable<IniciarVentaPresencialStripeRespuestaDTO> {
+    const key = idempotencyKey || crypto.randomUUID();
+    return this.http.post<IniciarVentaPresencialStripeRespuestaDTO>(
+      `${this.api}/ventas/presenciales/iniciar-stripe`,
+      dto,
+      { headers: new HttpHeaders({ 'Idempotency-Key': key }) }
+    );
+  }
 
   registrarAdelanto(reserva_id: string, metodo: MetodoCaja): Observable<Pago> {
     return this.http.post<Pago>(`${this.api}/pagos/adelantos`, { reserva_id, metodo }, { headers: cabeceraIdempotencia() });

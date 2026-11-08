@@ -12,7 +12,7 @@
         [attr.aria-selected]="vistaModo === 'TURNO_OFFLINE'"
         class="cycle-secondary"
         [class.active]="vistaModo === 'TURNO_OFFLINE'"
-        (click)="vistaModo = 'TURNO_OFFLINE'"
+        (click)="cambiarModo('TURNO_OFFLINE')"
       >
         Caja Registradora
       </button>
@@ -22,7 +22,7 @@
         [attr.aria-selected]="vistaModo === 'RESERVA'"
         class="cycle-secondary"
         [class.active]="vistaModo === 'RESERVA'"
-        (click)="vistaModo = 'RESERVA'"
+        (click)="cambiarModo('RESERVA')"
       >
         Cobro de Reservas
       </button>
@@ -331,16 +331,123 @@
             <p class="campo-ayuda">El saldo se debitará de la cuenta del cliente previa validación en servidor central.</p>
           </div>
 
-          <div *ngIf="medioPagoCaja === 'STRIPE_TEST'" class="fila-input">
-            <label>
-              <span>Intención de pago capturada (PaymentIntent ID)</span>
-              <input
-                type="text"
-                [(ngModel)]="stripePaymentIntentIdCaja"
-                placeholder="Ej. pi_test_..."
+          <div *ngIf="medioPagoCaja === 'STRIPE_TEST'" class="stripe-caja-panel cycle-card">
+            <div *ngIf="!ordenStripeCaja" class="stripe-inicio-caja">
+              <p class="campo-ayuda">Inicia el cobro con Stripe para calcular el monto exacto en USD y congelar la orden en caja.</p>
+              <button
+                type="button"
+                class="cycle-secondary btn-iniciar-stripe"
+                [disabled]="!lineasVentaOffline.length || iniciandoStripeCaja"
+                (click)="iniciarStripeCaja()"
               >
-            </label>
-            <p class="campo-ayuda">Se verificará la captura del cobro en la pasarela Stripe antes de la entrega física.</p>
+                {{ iniciandoStripeCaja ? 'Iniciando orden en servidor…' : 'Iniciar cobro con tarjeta Stripe' }}
+              </button>
+            </div>
+
+            <div *ngIf="ordenStripeCaja" class="stripe-orden-detalle">
+              <div
+                *ngIf="ordenStripeCaja.estado_verificacion === 'NO_VERIFICADO_ERROR_PASARELA'"
+                class="cycle-alert warning stripe-alerta-verificacion"
+                role="alert"
+              >
+                <span>No se pudo verificar el estado en Stripe por problema de red. Reintente la verificación antes de cobrar.</span>
+                <button
+                  type="button"
+                  class="cycle-secondary btn-reintentar-verificacion"
+                  (click)="recuperarOrdenActivaCaja()"
+                >
+                  Reintentar comprobación
+                </button>
+              </div>
+
+              <div
+                *ngIf="esOrdenProvisional(ordenStripeCaja)"
+                class="cycle-alert warning stripe-alerta-provisional"
+                role="alert"
+                aria-live="polite"
+              >
+                <div class="provisional-mensaje">
+                  <p class="provisional-texto">
+                    Orden de pago provisional detectada. Reanude el cobro para obtener la pasarela o cancele la orden.
+                  </p>
+                </div>
+                <div class="provisional-acciones">
+                  <button
+                    type="button"
+                    class="cycle-primary btn-reanudar-stripe"
+                    [disabled]="reanudandoStripeCaja"
+                    (click)="reanudarCobroStripeCaja()"
+                  >
+                    {{ reanudandoStripeCaja ? 'Reanudando cobro…' : 'Reanudar Cobro Stripe' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="cycle-secondary btn-cancelar-provisional"
+                    [disabled]="reanudandoStripeCaja"
+                    (click)="cancelarStripeCaja()"
+                  >
+                    Cancelar orden
+                  </button>
+                </div>
+              </div>
+
+              <div class="stripe-orden-cabecera">
+                <span class="stripe-badge" [class.capturado]="ordenStripeCaja.estado_orden === 'CAPTURADO'">
+                  Estado: {{ ordenStripeCaja.estado_orden }}
+                </span>
+                <button
+                  type="button"
+                  class="cycle-link"
+                  *ngIf="ordenStripeCaja.estado_orden !== 'CAPTURADO'"
+                  (click)="cancelarStripeCaja()"
+                >
+                  Cancelar orden
+                </button>
+              </div>
+              <p class="stripe-dato" *ngIf="ordenStripeCaja.stripe_payment_intent_id">
+                <strong>Intención:</strong> <code>{{ ordenStripeCaja.stripe_payment_intent_id }}</code>
+              </p>
+              <p class="stripe-dato"><strong>Total oficial:</strong> Bs {{ ordenStripeCaja.monto_bob }} ({{ ordenStripeCaja.monto_usd }} USD)</p>
+              <p class="stripe-dato"><strong>Tasa oficial:</strong> Bs {{ ordenStripeCaja.tasa_bob_por_usd }} por USD</p>
+
+              <!-- Contenedor seguro Stripe Card Element -->
+              <div *ngIf="!esOrdenProvisional(ordenStripeCaja) && ordenStripeCaja.estado_orden !== 'CAPTURADO'" class="stripe-element-container">
+                <label class="stripe-element-label" for="stripe-card-element-caja">
+                  Tarjeta de crédito o débito (Stripe Test)
+                </label>
+                <div id="stripe-card-element-caja" class="stripe-card-input"></div>
+                <div
+                  *ngIf="errorTarjetaCaja"
+                  class="stripe-card-error"
+                  role="alert"
+                >
+                  {{ errorTarjetaCaja }}
+                </div>
+              </div>
+
+              <div *ngIf="!esOrdenProvisional(ordenStripeCaja) && ordenStripeCaja.estado_orden !== 'CAPTURADO'" class="stripe-accion-captura">
+                <button
+                  type="button"
+                  class="cycle-primary btn-capturar-stripe"
+                  [disabled]="!cardElementCajaValido || capturandoStripeCaja"
+                  (click)="capturarStripeCaja()"
+                >
+                  {{ capturandoStripeCaja ? 'Confirmando y capturando fondos…' : 'Confirmar captura en Stripe Test' }}
+                </button>
+                <button
+                  type="button"
+                  class="cycle-secondary btn-reintentar-confirmacion"
+                  (click)="reintentarConfirmacionStripeCaja()"
+                >
+                  Sincronizar estado con Stripe
+                </button>
+              </div>
+
+              <div *ngIf="ordenStripeCaja.estado_orden === 'CAPTURADO'" class="stripe-capturado-exito" role="status">
+                <span class="badge badge-success">Cobro capturado exitosamente en pasarela</span>
+                <p>El importe en USD está garantizado. Proceda a liquidar y confirmar la entrega.</p>
+              </div>
+            </div>
           </div>
 
           <div class="totales-resumen" *ngIf="medioPagoCaja === 'EFECTIVO'">
@@ -376,7 +483,7 @@
           <button
             type="button"
             class="cycle-primary btn-cobro"
-            [disabled]="!lineasVentaOffline.length || (medioPagoCaja === 'EFECTIVO' && efectivoRecibido < totalVentaOffline()) || (medioPagoCaja === 'SALDO' && !clienteIdCaja.trim()) || (medioPagoCaja === 'STRIPE_TEST' && !stripePaymentIntentIdCaja.trim()) || procesando"
+            [disabled]="!lineasVentaOffline.length || (medioPagoCaja === 'EFECTIVO' && efectivoRecibido < totalVentaOffline()) || (medioPagoCaja === 'SALDO' && !clienteIdCaja.trim()) || (medioPagoCaja === 'STRIPE_TEST' && (!ordenStripeCaja || ordenStripeCaja.estado_orden !== 'CAPTURADO')) || procesando"
             (click)="cobrarVentaContado()"
           >
             {{ procesando ? 'Liquidando venta…' : (medioPagoCaja === 'EFECTIVO' ? 'Cobrar contado y entregar' : 'Liquidar y confirmar entrega') }}
@@ -701,15 +808,123 @@
           </label>
         </div>
 
-        <div *ngIf="!reserva && metodo === 'STRIPE_TEST'" class="presencial-input-campo">
-          <label>
-            <span>Intención de pago capturada (PaymentIntent ID)</span>
-            <input
-              type="text"
-              [(ngModel)]="stripePaymentIntentIdPresencial"
-              placeholder="Ej. pi_test_..."
+        <div *ngIf="!reserva && metodo === 'STRIPE_TEST'" class="stripe-caja-panel cycle-card">
+          <div *ngIf="!ordenStripePresencial" class="stripe-inicio-caja">
+            <p class="campo-ayuda">Inicia el cobro con Stripe para calcular el monto exacto en USD y congelar la orden en caja.</p>
+            <button
+              type="button"
+              class="cycle-secondary btn-iniciar-stripe"
+              [disabled]="!items.length || iniciandoStripePresencial"
+              (click)="iniciarStripePresencial()"
             >
-          </label>
+              {{ iniciandoStripePresencial ? 'Iniciando orden en servidor…' : 'Iniciar cobro con tarjeta Stripe' }}
+            </button>
+          </div>
+
+          <div *ngIf="ordenStripePresencial" class="stripe-orden-detalle">
+            <div
+              *ngIf="ordenStripePresencial.estado_verificacion === 'NO_VERIFICADO_ERROR_PASARELA'"
+              class="cycle-alert warning stripe-alerta-verificacion"
+              role="alert"
+            >
+              <span>No se pudo verificar el estado en Stripe por problema de red. Reintente la verificación antes de cobrar.</span>
+              <button
+                type="button"
+                class="cycle-secondary btn-reintentar-verificacion"
+                (click)="recuperarOrdenActivaCaja()"
+              >
+                Reintentar comprobación
+              </button>
+            </div>
+
+            <div
+              *ngIf="esOrdenProvisional(ordenStripePresencial)"
+              class="cycle-alert warning stripe-alerta-provisional"
+              role="alert"
+              aria-live="polite"
+            >
+              <div class="provisional-mensaje">
+                <p class="provisional-texto">
+                  Orden de pago provisional detectada. Reanude el cobro para obtener la pasarela o cancele la orden.
+                </p>
+              </div>
+              <div class="provisional-acciones">
+                <button
+                  type="button"
+                  class="cycle-primary btn-reanudar-stripe"
+                  [disabled]="reanudandoStripePresencial"
+                  (click)="reanudarCobroStripePresencial()"
+                >
+                  {{ reanudandoStripePresencial ? 'Reanudando cobro…' : 'Reanudar Cobro Stripe' }}
+                </button>
+                <button
+                  type="button"
+                  class="cycle-secondary btn-cancelar-provisional"
+                  [disabled]="reanudandoStripePresencial"
+                  (click)="cancelarStripePresencial()"
+                >
+                  Cancelar orden
+                </button>
+              </div>
+            </div>
+
+            <div class="stripe-orden-cabecera">
+              <span class="stripe-badge" [class.capturado]="ordenStripePresencial.estado_orden === 'CAPTURADO'">
+                Estado: {{ ordenStripePresencial.estado_orden }}
+              </span>
+              <button
+                type="button"
+                class="cycle-link"
+                *ngIf="ordenStripePresencial.estado_orden !== 'CAPTURADO'"
+                (click)="cancelarStripePresencial()"
+              >
+                Cancelar orden
+              </button>
+            </div>
+            <p class="stripe-dato" *ngIf="ordenStripePresencial.stripe_payment_intent_id">
+              <strong>Intención:</strong> <code>{{ ordenStripePresencial.stripe_payment_intent_id }}</code>
+            </p>
+            <p class="stripe-dato"><strong>Total oficial:</strong> Bs {{ ordenStripePresencial.monto_bob }} ({{ ordenStripePresencial.monto_usd }} USD)</p>
+            <p class="stripe-dato"><strong>Tasa oficial:</strong> Bs {{ ordenStripePresencial.tasa_bob_por_usd }} por USD</p>
+
+            <!-- Contenedor seguro Stripe Card Element -->
+            <div *ngIf="!esOrdenProvisional(ordenStripePresencial) && ordenStripePresencial.estado_orden !== 'CAPTURADO'" class="stripe-element-container">
+              <label class="stripe-element-label" for="stripe-card-element-presencial">
+                Tarjeta de crédito o débito (Stripe Test)
+              </label>
+              <div id="stripe-card-element-presencial" class="stripe-card-input"></div>
+              <div
+                *ngIf="errorTarjetaPresencial"
+                class="stripe-card-error"
+                role="alert"
+              >
+                {{ errorTarjetaPresencial }}
+              </div>
+            </div>
+
+            <div *ngIf="!esOrdenProvisional(ordenStripePresencial) && ordenStripePresencial.estado_orden !== 'CAPTURADO'" class="stripe-accion-captura">
+              <button
+                type="button"
+                class="cycle-primary btn-capturar-stripe"
+                [disabled]="!cardElementPresencialValido || capturandoStripePresencial"
+                (click)="capturarStripePresencial()"
+              >
+                {{ capturandoStripePresencial ? 'Confirmando y capturando fondos…' : 'Confirmar captura en Stripe Test' }}
+              </button>
+              <button
+                type="button"
+                class="cycle-secondary btn-reintentar-confirmacion"
+                (click)="reintentarConfirmacionStripePresencial()"
+              >
+                Sincronizar estado con Stripe
+              </button>
+            </div>
+
+            <div *ngIf="ordenStripePresencial.estado_orden === 'CAPTURADO'" class="stripe-capturado-exito" role="status">
+              <span class="badge badge-success">Cobro capturado exitosamente en pasarela</span>
+              <p>El importe en USD está garantizado. Proceda a liquidar y finalizar la venta.</p>
+            </div>
+          </div>
         </div>
 
         <div *ngIf="!reserva && metodo === 'EFECTIVO'" class="presencial-input-campo">
@@ -732,7 +947,7 @@
         <button
           type="button"
           class="cycle-primary"
-          [disabled]="!items.length || (metodo === 'SALDO' && !clienteIdPresencial.trim()) || (metodo === 'STRIPE_TEST' && !stripePaymentIntentIdPresencial.trim()) || procesando"
+          [disabled]="!items.length || (metodo === 'SALDO' && !clienteIdPresencial.trim()) || (metodo === 'STRIPE_TEST' && (!ordenStripePresencial || ordenStripePresencial.estado_orden !== 'CAPTURADO')) || procesando"
           (click)="vender()"
         >
           {{ procesando ? 'Liquidando…' : 'Cobrar y finalizar' }}

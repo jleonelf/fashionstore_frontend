@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router, ActivatedRouteSnapshot, RouterStateSnapshot, UrlTree } from '@angular/router';
 import { HttpRequest, HttpErrorResponse, HttpHandlerFn } from '@angular/common/http';
 import { of, throwError } from 'rxjs';
-import { authGuard } from './auth.guard';
+import { authGuard, platformHomeGuard } from './auth.guard';
 import { authInterceptor } from '../interceptors/auth.interceptor';
 import { AuthService } from '../../features/identidad_empresas/services/auth.service';
 import { ClientePerfil } from '../../features/identidad_empresas/models/auth.models';
@@ -137,6 +137,17 @@ describe('authGuard y authInterceptor (Seguridad y RBAC)', () => {
       const resultado = TestBed.runInInjectionContext(() => authGuard(route, state));
       expect(resultado).toBeTrue();
     });
+  });
+
+  it('redirige el inicio del SUPERADMIN global al panel de plataforma', () => {
+    authServiceSpy.obtenerUsuarioActual.and.returnValue({
+      id: 'super-1', usuario_id: 'super-1', nombres: 'Super', apellidos: 'Admin',
+      nombre_completo: 'Super Admin', correo_electronico: 'super@example.com',
+      rol: 'SUPERADMIN', estado: 'ACTIVO', preferencias: {}, creado_en: '2026-01-01', empresa_id: null
+    });
+
+    TestBed.runInInjectionContext(() => platformHomeGuard({} as ActivatedRouteSnapshot, { url: '/' } as RouterStateSnapshot));
+    expect(routerSpy.createUrlTree).toHaveBeenCalledWith(['/plataforma']);
   });
 
   describe('authInterceptor (Tratamiento de 401 y 403)', () => {

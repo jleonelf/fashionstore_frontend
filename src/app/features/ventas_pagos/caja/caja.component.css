@@ -534,6 +534,188 @@
   margin: 0.25rem 0 0 0;
 }
 
+.stripe-caja-panel {
+  padding: 1rem;
+  margin: 1rem 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.stripe-inicio-caja {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.btn-iniciar-stripe,
+.btn-capturar-stripe {
+  min-height: 44px;
+}
+
+.stripe-orden-detalle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.stripe-orden-cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.stripe-badge {
+  display: inline-block;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.stripe-badge.capturado {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.stripe-dato {
+  font-size: 0.85rem;
+  margin: 0.15rem 0;
+  color: var(--ink);
+}
+
+.stripe-dato code {
+  font-family: monospace;
+  background: var(--surface-alt);
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+}
+
+.stripe-accion-captura {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.stripe-element-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.75rem 0;
+}
+
+.stripe-element-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.stripe-card-input {
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  min-height: 44px;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.stripe-card-input:focus-within {
+  border-color: var(--ink);
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.stripe-card-error {
+  color: #b3261e;
+  font-size: 0.82rem;
+  font-weight: 500;
+  margin-top: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.btn-reintentar-confirmacion {
+  min-height: 44px;
+}
+
+.stripe-alerta-verificacion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.5rem 0;
+  padding: 0.75rem 1rem;
+}
+
+.btn-reintentar-verificacion {
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.stripe-alerta-provisional {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+  padding: 1rem;
+  background: var(--warning-bg, #fef7e0);
+  border: 1px solid var(--warning-border, #f9ab00);
+  border-radius: var(--radius-card, 8px);
+}
+
+.provisional-mensaje {
+  display: flex;
+  align-items: center;
+}
+
+.provisional-texto {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ink, #1c1b1f);
+  line-height: 1.4;
+}
+
+.provisional-acciones {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.btn-reanudar-stripe {
+  min-height: 44px;
+  font-weight: 600;
+}
+
+.btn-cancelar-provisional {
+  min-height: 44px;
+}
+
+.stripe-capturado-exito {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  background: #e6f4ea;
+  border: 1px solid #ceead6;
+  border-radius: var(--radius-control);
+  margin-top: 0.5rem;
+}
+
+.stripe-capturado-exito p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #137333;
+}
+
 @media (max-width: 640px) {
   .line-builder {
     grid-template-columns: 1fr;
@@ -576,6 +758,13 @@
     align-items: stretch;
   }
   .banner-pendiente-acciones button {
+    width: 100%;
+  }
+  .provisional-acciones {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .provisional-acciones button {
     width: 100%;
   }
   button, input, select {

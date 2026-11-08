@@ -1,8 +1,9 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, Optional } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
+import { WebPushService } from '../../services/web-push.service';
 import { LoginDTO, EmpresaSimpleDTO, TokenRespuesta } from '../../models/auth.models';
 import { formatearErrorApi } from '../../../../core/utils/error-handler.util';
 
@@ -35,7 +36,8 @@ export class LoginComponent implements OnInit {
   constructor(
     private authService: AuthService,
     private router: Router,
-    private route: ActivatedRoute
+    private route: ActivatedRoute,
+    @Optional() private webPushService?: WebPushService
   ) {}
 
   ngOnInit(): void {
@@ -152,7 +154,14 @@ export class LoginComponent implements OnInit {
 
   private finalizarLogin(resp: TokenRespuesta): void {
     this.mensajeExito = `¡Bienvenido, ${resp.usuario.nombre_completo}!`;
+    if (this.webPushService && this.webPushService.estaSoportado()) {
+      this.webPushService.suscribirWebPush().subscribe({
+        next: () => {},
+        error: () => {}
+      });
+    }
     const redirectUrl = this.route.snapshot.queryParamMap.get('redirectUrl');
-    this.router.navigateByUrl(redirectUrl?.startsWith('/') ? redirectUrl : '/');
+    const esPlataforma = !resp.usuario.empresa_id && ['SUPERADMIN', 'ADMINISTRADOR_PLATAFORMA', 'ADMINISTRADOR_SISTEMA'].includes(resp.usuario.rol);
+    this.router.navigateByUrl(redirectUrl?.startsWith('/') ? redirectUrl : (esPlataforma ? '/plataforma' : '/'));
   }
 }

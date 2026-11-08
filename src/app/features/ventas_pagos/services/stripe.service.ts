@@ -11,6 +11,7 @@ import {
   OrdenPagoDTO,
   ContinuarAccionDTO
 } from '../models/venta-digital.models';
+import { IniciarVentaPresencialStripeRespuestaDTO, OrdenActivaCajaDTO } from '../models/venta-presencial.models';
 
 @Injectable({ providedIn: 'root' })
 export class StripeService {
@@ -52,6 +53,16 @@ export class StripeService {
     );
   }
 
+  confirmarMetodo(
+    preparacionPagoId: string,
+    dto?: { payment_method_id?: string }
+  ): Observable<MetodoPreparadoDTO> {
+    return this.http.post<MetodoPreparadoDTO>(
+      `${this.api}/pagos/stripe/metodos/${preparacionPagoId}/confirmar`,
+      dto || {}
+    );
+  }
+
   crearOrdenPago(dto: OrdenPagoCrearDTO, idempotencyKey?: string): Observable<OrdenPagoDTO> {
     const key = idempotencyKey || crypto.randomUUID();
     return this.http.post<OrdenPagoDTO>(
@@ -71,6 +82,52 @@ export class StripeService {
       `${this.api}/pagos/stripe/ordenes/${ordenPagoId}/continuar-accion`,
       dto,
       { headers: new HttpHeaders({ 'Idempotency-Key': key }) }
+    );
+  }
+
+  consultarOrdenPago(ordenPagoId: string): Observable<OrdenPagoDTO> {
+    return this.http.get<OrdenPagoDTO>(`${this.api}/pagos/stripe/ordenes/${ordenPagoId}`);
+  }
+
+  confirmarOrdenPago(ordenPagoId: string): Observable<OrdenPagoDTO> {
+    return this.http.post<OrdenPagoDTO>(
+      `${this.api}/pagos/stripe/ordenes/${ordenPagoId}/confirmar`,
+      {}
+    );
+  }
+
+  cancelarOrdenPago(ordenPagoId: string): Observable<OrdenPagoDTO> {
+    return this.http.post<OrdenPagoDTO>(
+      `${this.api}/pagos/stripe/ordenes/${ordenPagoId}/cancelar`,
+      {}
+    );
+  }
+
+  /**
+   * Reanuda una orden de pago provisional generada tras fallo en la segunda transacción de inicio Stripe.
+   * Invoca de forma idempotente la creación o reutilización del PaymentIntent en la pasarela.
+   */
+  reanudarOrdenPago(ordenPagoId: string): Observable<OrdenPagoDTO> {
+    return this.http.post<OrdenPagoDTO>(
+      `${this.api}/pagos/stripe/ordenes/${ordenPagoId}/reanudar`,
+      {}
+    );
+  }
+
+  /**
+   * Recupera la orden de pago activa (PENDIENTE o CAPTURADA) para la caja/sucursal
+   * tras una recarga (F5) o reconexión de red sin persistir client_secret localmente.
+   */
+  obtenerOrdenActivaCaja(
+    sucursalId?: string,
+    turnoCajaId?: string
+  ): Observable<OrdenActivaCajaDTO | null> {
+    const params: Record<string, string> = {};
+    if (sucursalId) params['sucursal_id'] = sucursalId;
+    if (turnoCajaId) params['turno_caja_id'] = turnoCajaId;
+    return this.http.get<OrdenActivaCajaDTO | null>(
+      `${this.api}/pagos/stripe/ordenes/activa-caja`,
+      { params }
     );
   }
 

@@ -26,6 +26,117 @@ export interface ResumenSincronizacion {
   pendientes: number;
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SHA256_REGEX = /^[0-9a-fA-F]{64}$/;
+const DECIMAL_REGEX = /^\d+(\.\d+)?$/;
+
+function esUuidValido(val: unknown): boolean {
+  return typeof val === 'string' && UUID_REGEX.test(val.trim());
+}
+
+function esSha256Valido(val: unknown): boolean {
+  return typeof val === 'string' && SHA256_REGEX.test(val.trim());
+}
+
+function esDecimalPositivo(val: unknown): boolean {
+  if (typeof val !== 'string' && typeof val !== 'number') return false;
+  const s = String(val).trim();
+  if (!DECIMAL_REGEX.test(s)) return false;
+  const n = Number(s);
+  return !isNaN(n) && n > 0;
+}
+
+function esDecimalNoNegativo(val: unknown): boolean {
+  if (typeof val !== 'string' && typeof val !== 'number') return false;
+  const s = String(val).trim();
+  if (!DECIMAL_REGEX.test(s)) return false;
+  const n = Number(s);
+  return !isNaN(n) && n >= 0;
+}
+
+function esFechaIsoValida(val: unknown): boolean {
+  if (typeof val !== 'string' || !val.trim()) return false;
+  const timestamp = Date.parse(val);
+  if (isNaN(timestamp)) return false;
+  return /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(val.trim());
+}
+
+/**
+ * Sanitiza el objeto autorizacion_cobro para que contenga exactamente los 15 campos
+ * contractuales del Protocolo v3 (operacion.schema.json) sin campos adicionales
+ * que provoquen error extra="forbid" (e.g. consentimiento, metodo_preparado_id, huella_dispositivo).
+ * NUNCA inventa consentimiento, tasas, fechas ni montos por defecto.
+ * Valida formatos estrictos de UUID, hash SHA-256, decimales positivos/no-negativos y fechas ISO.
+ * Si la autorización es parcial o falta cualquier campo requerido o formato inválido, retorna undefined
+ * para que la orden se encole sin cobro y pase a PENDIENTE_INTERVENCION.
+ */
+export function sanitizarAutorizacionCobro(
+  auth?: Partial<AutorizacionCobroOfflineDTO> | null
+): AutorizacionCobroOfflineDTO | undefined {
+  if (!auth) return undefined;
+
+  const prepId = auth.preparacion_pago_id || (auth as any).metodo_preparado_id;
+  if (!esUuidValido(prepId)) return undefined;
+
+  const consId = auth.consentimiento_id;
+  if (!esUuidValido(consId)) return undefined;
+
+  const tasaId = auth.tasa_id;
+  if (!esUuidValido(tasaId)) return undefined;
+
+  const huella = auth.huella_compra;
+  if (!esSha256Valido(huella)) return undefined;
+
+  const baseBob = auth.base_bob;
+  if (!esDecimalPositivo(baseBob)) return undefined;
+
+  const descuentoBob = auth.descuento_bob;
+  if (!esDecimalNoNegativo(descuentoBob)) return undefined;
+
+  const envioBob = auth.envio_bob;
+  if (!esDecimalNoNegativo(envioBob)) return undefined;
+
+  const totalBob = auth.total_bob;
+  if (!esDecimalPositivo(totalBob)) return undefined;
+
+  if (auth.moneda_cobro !== 'USD') return undefined;
+
+  const importeCobro = auth.importe_cobro;
+  if (!esDecimalPositivo(importeCobro)) return undefined;
+
+  const tasaBobPorUsd = auth.tasa_bob_por_usd;
+  if (!esDecimalPositivo(tasaBobPorUsd)) return undefined;
+
+  const condicionesVersion = auth.condiciones_version;
+  if (!condicionesVersion || typeof condicionesVersion !== 'string' || !condicionesVersion.trim()) return undefined;
+
+  const aceptado = auth.aceptado_local_en;
+  if (!esFechaIsoValida(aceptado)) return undefined;
+
+  const vigenteHasta = auth.vigente_hasta;
+  if (!esFechaIsoValida(vigenteHasta)) return undefined;
+
+  if (auth.permite_cobro_al_reconectar !== true) return undefined;
+
+  return {
+    consentimiento_id: String(consId).trim(),
+    aceptado_local_en: String(aceptado).trim(),
+    huella_compra: String(huella).trim(),
+    base_bob: String(baseBob).trim(),
+    descuento_bob: String(descuentoBob).trim(),
+    envio_bob: String(envioBob).trim(),
+    total_bob: String(totalBob).trim(),
+    moneda_cobro: 'USD',
+    importe_cobro: String(importeCobro).trim(),
+    tasa_id: String(tasaId).trim(),
+    tasa_bob_por_usd: String(tasaBobPorUsd).trim(),
+    condiciones_version: String(condicionesVersion).trim(),
+    vigente_hasta: String(vigenteHasta).trim(),
+    preparacion_pago_id: String(prepId).trim(),
+    permite_cobro_al_reconectar: true
+  };
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -257,40 +368,14 @@ export class SincronizacionOfflineService {
     const creadaLocalEn = obtenerHoraBoliviaIso();
     const operacionId = crypto.randomUUID();
 
-    const tieneAutorizacion = !!datos.autorizacion_cobro && (
-      datos.autorizacion_cobro.consentimiento !== undefined ||
-      !!datos.autorizacion_cobro.metodo_preparado_id ||
-      !!datos.autorizacion_cobro.preparacion_pago_id ||
-      !!datos.autorizacion_cobro.consentimiento_id
-    );
-    const versionEsquema = tieneAutorizacion ? 3 : 1;
-
-    const autorizacionCobroData = datos.autorizacion_cobro
-      ? {
-          consentimiento: !!datos.autorizacion_cobro.consentimiento,
-          metodo_preparado_id: datos.autorizacion_cobro.metodo_preparado_id || datos.autorizacion_cobro.preparacion_pago_id,
-          huella_dispositivo: datos.autorizacion_cobro.huella_dispositivo || dispositivoId,
-          ...(datos.autorizacion_cobro.consentimiento_id ? { consentimiento_id: datos.autorizacion_cobro.consentimiento_id } : {}),
-          ...(datos.autorizacion_cobro.aceptado_local_en ? { aceptado_local_en: datos.autorizacion_cobro.aceptado_local_en } : {}),
-          ...(datos.autorizacion_cobro.huella_compra ? { huella_compra: datos.autorizacion_cobro.huella_compra } : {}),
-          ...(datos.autorizacion_cobro.base_bob ? { base_bob: datos.autorizacion_cobro.base_bob } : {}),
-          ...(datos.autorizacion_cobro.descuento_bob ? { descuento_bob: datos.autorizacion_cobro.descuento_bob } : {}),
-          ...(datos.autorizacion_cobro.envio_bob ? { envio_bob: datos.autorizacion_cobro.envio_bob } : {}),
-          ...(datos.autorizacion_cobro.total_bob ? { total_bob: datos.autorizacion_cobro.total_bob } : {}),
-          ...(datos.autorizacion_cobro.moneda_cobro ? { moneda_cobro: datos.autorizacion_cobro.moneda_cobro } : {}),
-          ...(datos.autorizacion_cobro.importe_cobro ? { importe_cobro: datos.autorizacion_cobro.importe_cobro } : {}),
-          ...(datos.autorizacion_cobro.tasa_id ? { tasa_id: datos.autorizacion_cobro.tasa_id } : {}),
-          ...(datos.autorizacion_cobro.tasa_bob_por_usd ? { tasa_bob_por_usd: datos.autorizacion_cobro.tasa_bob_por_usd } : {}),
-          ...(datos.autorizacion_cobro.condiciones_version ? { condiciones_version: datos.autorizacion_cobro.condiciones_version } : {}),
-          ...(datos.autorizacion_cobro.vigente_hasta ? { vigente_hasta: datos.autorizacion_cobro.vigente_hasta } : {}),
-          ...(datos.autorizacion_cobro.preparacion_pago_id ? { preparacion_pago_id: datos.autorizacion_cobro.preparacion_pago_id } : {}),
-          permite_cobro_al_reconectar: datos.autorizacion_cobro.permite_cobro_al_reconectar !== false
-        }
-      : undefined;
+    // Protocolo v3: SOLICITAR_COMPRA siempre emite version_esquema: 3 (nunca degradar a v1)
+    // autorizacion_cobro solo se incluye si cuenta con método preparado y consentimiento;
+    // debe contener estrictamente los 15 campos contractuales sin ningún campo extra.
+    const autorizacionCobroData = sanitizarAutorizacionCobro(datos.autorizacion_cobro);
 
     const operacion: OperacionEncolada = {
       operacion_id: operacionId,
-      version_esquema: versionEsquema,
+      version_esquema: 3,
       tipo: 'SOLICITAR_COMPRA',
       creada_local_en: creadaLocalEn,
       empresa_id: empresaId,
@@ -412,16 +497,21 @@ export class SincronizacionOfflineService {
     // Marcar como ENVIANDO antes de emitir la llamada
     await this.offlineStore.actualizarEstadoOperacion(op.operacion_id, 'ENVIANDO');
 
-    const tieneAutorizacion = !!(op.datos as any)?.autorizacion_cobro && (
-      (op.datos as any).autorizacion_cobro.consentimiento !== undefined ||
-      !!(op.datos as any).autorizacion_cobro.metodo_preparado_id ||
-      !!(op.datos as any).autorizacion_cobro.preparacion_pago_id ||
-      !!(op.datos as any).autorizacion_cobro.consentimiento_id
-    );
+    // Protocolo v3: SOLICITAR_COMPRA siempre utiliza versión de esquema 3
+    const versionEsquema = op.tipo === 'SOLICITAR_COMPRA' ? 3 : (op.version_esquema || 1);
 
-    const versionEsquema = op.version_esquema === 3 || (op.tipo === 'SOLICITAR_COMPRA' && tieneAutorizacion)
-      ? 3
-      : (op.version_esquema || 1);
+    // Asegurar que si op.datos contiene autorizacion_cobro, esté estrictamente sanitizada a 15 campos
+    let datosEnvio = op.datos;
+    if (op.tipo === 'SOLICITAR_COMPRA' && (op.datos as any)?.autorizacion_cobro) {
+      const authLimpia = sanitizarAutorizacionCobro((op.datos as any).autorizacion_cobro);
+      datosEnvio = {
+        ...op.datos,
+        ...(authLimpia ? { autorizacion_cobro: authLimpia } : {})
+      };
+      if (!authLimpia) {
+        delete (datosEnvio as any).autorizacion_cobro;
+      }
+    }
 
     const comando = {
       version_esquema: versionEsquema,
@@ -434,7 +524,7 @@ export class SincronizacionOfflineService {
       dispositivo_id: op.dispositivo_id,
       secuencia_local: op.secuencia_local,
       referencia_horaria_id: op.referencia_horaria_id,
-      datos: op.datos
+      datos: datosEnvio
     };
 
     try {
@@ -588,11 +678,12 @@ export class SincronizacionOfflineService {
     }
 
     const datosCompra = { ...(op.datos as OperacionDatosCompra) };
-    datosCompra.autorizacion_cobro = {
-      ...(datosCompra.autorizacion_cobro || {}),
-      ...autorizacion,
-      consentimiento: autorizacion.consentimiento !== false
-    };
+    const authLimpia = sanitizarAutorizacionCobro(autorizacion);
+    if (authLimpia) {
+      datosCompra.autorizacion_cobro = authLimpia;
+    } else {
+      delete (datosCompra as any).autorizacion_cobro;
+    }
 
     op.datos = datosCompra;
     op.version_esquema = 3;

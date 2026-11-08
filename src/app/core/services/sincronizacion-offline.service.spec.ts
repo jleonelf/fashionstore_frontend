@@ -1,7 +1,7 @@
 import { TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
 import { of, throwError } from 'rxjs';
-import { SincronizacionOfflineService } from './sincronizacion-offline.service';
+import { SincronizacionOfflineService, sanitizarAutorizacionCobro } from './sincronizacion-offline.service';
 import { OfflineStoreService, OperacionEncolada, ReferenciaHorariaLocal } from './offline-store.service';
 import { AuthService } from '../../features/identidad_empresas/services/auth.service';
 
@@ -64,8 +64,134 @@ describe('SincronizacionOfflineService (Protocolo v3 y Resiliencia Offline)', ()
     service = TestBed.inject(SincronizacionOfflineService);
   });
 
-  describe('Emisión de versión de esquema (v1 vs v3)', () => {
-    it('emite version_esquema: 1 cuando SOLICITAR_COMPRA no incluye autorizacion_cobro', async () => {
+  describe('Sanitizador de Autorización de Cobro Protocolo v3 (CU05)', () => {
+    it('retorna undefined cuando la autorización está ausente', () => {
+      expect(sanitizarAutorizacionCobro(undefined)).toBeUndefined();
+      expect(sanitizarAutorizacionCobro(null)).toBeUndefined();
+    });
+
+    it('rechaza objeto parcial y NO inventa consentimiento, tasa 6.96 ni fechas (debe ser undefined)', () => {
+      const authParcial = {
+        preparacion_pago_id: 'prep-solo-id'
+      };
+      const sanitizado = sanitizarAutorizacionCobro(authParcial);
+      expect(sanitizado).toBeUndefined();
+    });
+
+    it('rechaza cuando falta tasa_id o cuando permite_cobro_al_reconectar no es true', () => {
+      const authSinTasa = {
+        preparacion_pago_id: 'prep-123',
+        consentimiento_id: 'cons-123',
+        aceptado_local_en: '2026-11-05T12:00:00-04:00',
+        huella_compra: 'abc123',
+        base_bob: '100.00',
+        descuento_bob: '0.00',
+        envio_bob: '0.00',
+        total_bob: '100.00',
+        moneda_cobro: 'USD' as const,
+        importe_cobro: '14.37',
+        tasa_bob_por_usd: '6.96',
+        condiciones_version: 'v3',
+        vigente_hasta: '2026-11-06T12:00:00Z',
+        permite_cobro_al_reconectar: true
+        // Falta tasa_id
+      };
+      expect(sanitizarAutorizacionCobro(authSinTasa)).toBeUndefined();
+    });
+
+    it('retorna exactamente los 15 campos contractuales cuando todos están presentes y válidos auténticamente', () => {
+      const authCompleto = {
+        preparacion_pago_id: '123e4567-e89b-12d3-a456-426614174000',
+        consentimiento_id: '550e8400-e29b-41d4-a716-446655440000',
+        aceptado_local_en: '2026-11-05T12:00:00-04:00',
+        huella_compra: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        base_bob: '150.00',
+        descuento_bob: '10.00',
+        envio_bob: '15.00',
+        total_bob: '155.00',
+        moneda_cobro: 'USD' as const,
+        importe_cobro: '22.27',
+        tasa_id: '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
+        tasa_bob_por_usd: '6.96',
+        condiciones_version: 'v3',
+        vigente_hasta: '2026-11-06T12:00:00Z',
+        permite_cobro_al_reconectar: true
+      };
+      const res = sanitizarAutorizacionCobro(authCompleto);
+      expect(res).toBeDefined();
+      expect(Object.keys(res!).length).toBe(15);
+      expect(res!.preparacion_pago_id).toBe('123e4567-e89b-12d3-a456-426614174000');
+      expect(res!.consentimiento_id).toBe('550e8400-e29b-41d4-a716-446655440000');
+      expect(res!.moneda_cobro).toBe('USD');
+      expect(res!.permite_cobro_al_reconectar).toBeTrue();
+    });
+
+    it('[CONTRAEJEMPLO ROJO] rechaza strings que no son UUID estricto en consentimiento_id, tasa_id o preparacion_pago_id', () => {
+      const authConUuidInvalido = {
+        preparacion_pago_id: 'no-es-un-uuid',
+        consentimiento_id: '550e8400-e29b-41d4-a716-446655440000',
+        tasa_id: '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
+        aceptado_local_en: '2026-11-05T12:00:00-04:00',
+        huella_compra: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        base_bob: '150.00',
+        descuento_bob: '0.00',
+        envio_bob: '0.00',
+        total_bob: '150.00',
+        moneda_cobro: 'USD' as const,
+        importe_cobro: '21.55',
+        tasa_bob_por_usd: '6.96',
+        condiciones_version: 'v3',
+        vigente_hasta: '2026-11-06T12:00:00Z',
+        permite_cobro_al_reconectar: true
+      };
+      expect(sanitizarAutorizacionCobro(authConUuidInvalido)).toBeUndefined();
+    });
+
+    it('[CONTRAEJEMPLO ROJO] rechaza huella_compra que no sea SHA-256 de 64 caracteres hex', () => {
+      const authConHuellaCorta = {
+        preparacion_pago_id: '123e4567-e89b-12d3-a456-426614174000',
+        consentimiento_id: '550e8400-e29b-41d4-a716-446655440000',
+        tasa_id: '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
+        aceptado_local_en: '2026-11-05T12:00:00-04:00',
+        huella_compra: 'abc123no-es-sha256',
+        base_bob: '150.00',
+        descuento_bob: '0.00',
+        envio_bob: '0.00',
+        total_bob: '150.00',
+        moneda_cobro: 'USD' as const,
+        importe_cobro: '21.55',
+        tasa_bob_por_usd: '6.96',
+        condiciones_version: 'v3',
+        vigente_hasta: '2026-11-06T12:00:00Z',
+        permite_cobro_al_reconectar: true
+      };
+      expect(sanitizarAutorizacionCobro(authConHuellaCorta)).toBeUndefined();
+    });
+
+    it('[CONTRAEJEMPLO ROJO] rechaza importes no positivos o fechas inválidas', () => {
+      const authMontoNegativo = {
+        preparacion_pago_id: '123e4567-e89b-12d3-a456-426614174000',
+        consentimiento_id: '550e8400-e29b-41d4-a716-446655440000',
+        tasa_id: '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
+        aceptado_local_en: 'fecha-invalida',
+        huella_compra: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        base_bob: '-150.00',
+        descuento_bob: '0.00',
+        envio_bob: '0.00',
+        total_bob: '-150.00',
+        moneda_cobro: 'USD' as const,
+        importe_cobro: '-21.55',
+        tasa_bob_por_usd: '6.96',
+        condiciones_version: 'v3',
+        vigente_hasta: 'fecha-invalida',
+        permite_cobro_al_reconectar: true
+      };
+      expect(sanitizarAutorizacionCobro(authMontoNegativo)).toBeUndefined();
+    });
+  });
+
+  describe('Emisión de versión de esquema Protocolo v3 (Auditoría 28)', () => {
+    it('emite version_esquema: 3 y omite autorizacion_cobro cuando SOLICITAR_COMPRA no incluye autorizacion_cobro', async () => {
       const op = await service.registrarCompraOffline({
         sucursal_id: 'suc-1',
         modalidad: 'RECOJO',
@@ -73,36 +199,68 @@ describe('SincronizacionOfflineService (Protocolo v3 y Resiliencia Offline)', ()
       });
 
       expect(op.tipo).toBe('SOLICITAR_COMPRA');
-      expect(op.version_esquema).toBe(1);
+      expect(op.version_esquema).toBe(3);
+      expect((op.datos as any).autorizacion_cobro).toBeUndefined();
       expect(offlineStoreSpy.encolarOperacionAtomiaca).toHaveBeenCalledWith(
-        jasmine.objectContaining({ version_esquema: 1 })
+        jasmine.objectContaining({
+          version_esquema: 3,
+          tipo: 'SOLICITAR_COMPRA'
+        })
       );
     });
 
-    it('emite version_esquema: 3 cuando SOLICITAR_COMPRA incluye autorizacion_cobro', async () => {
+    it('emite version_esquema: 3 con exactamente 15 campos contractuales y sin campos extra prohibidos', async () => {
       const op = await service.registrarCompraOffline({
         sucursal_id: 'suc-1',
         modalidad: 'RECOJO',
         lineas: [{ variante_id: 'v-1', cantidad: 2 }],
         autorizacion_cobro: {
-          consentimiento: true,
-          preparacion_pago_id: 'prep-123',
+          preparacion_pago_id: '123e4567-e89b-12d3-a456-426614174000',
           permite_cobro_al_reconectar: true,
           total_bob: '200.00',
-          moneda_cobro: 'USD'
+          moneda_cobro: 'USD',
+          base_bob: '200.00',
+          descuento_bob: '0.00',
+          envio_bob: '0.00',
+          importe_cobro: '28.74',
+          tasa_id: '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
+          tasa_bob_por_usd: '6.96',
+          condiciones_version: 'v3',
+          vigente_hasta: '2026-11-06T12:00:00Z',
+          consentimiento_id: '550e8400-e29b-41d4-a716-446655440000',
+          aceptado_local_en: '2026-11-05T12:00:00-04:00',
+          huella_compra: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
         }
       });
 
       expect(op.tipo).toBe('SOLICITAR_COMPRA');
       expect(op.version_esquema).toBe(3);
-      expect((op.datos as any).autorizacion_cobro).toBeDefined();
+      const auth = (op.datos as any).autorizacion_cobro;
+      expect(auth).toBeDefined();
+
+      // Exactamente 15 campos contractuales
+      const claves = Object.keys(auth);
+      expect(claves.length).toBe(15);
+
+      // Verificación estricta de ausencia de campos prohibidos que causan error extra="forbid"
+      expect((auth as any).consentimiento).toBeUndefined();
+      expect((auth as any).metodo_preparado_id).toBeUndefined();
+      expect((auth as any).huella_dispositivo).toBeUndefined();
+
+      // Campos clave
+      expect(auth.moneda_cobro).toBe('USD');
+      expect(auth.permite_cobro_al_reconectar).toBeTrue();
+      expect(auth.preparacion_pago_id).toBe('123e4567-e89b-12d3-a456-426614174000');
+      expect(auth.consentimiento_id).toBe('550e8400-e29b-41d4-a716-446655440000');
+
       expect(offlineStoreSpy.encolarOperacionAtomiaca).toHaveBeenCalledWith(
         jasmine.objectContaining({
           version_esquema: 3,
           datos: jasmine.objectContaining({
             autorizacion_cobro: jasmine.objectContaining({
-              preparacion_pago_id: 'prep-123',
-              permite_cobro_al_reconectar: true
+              preparacion_pago_id: '123e4567-e89b-12d3-a456-426614174000',
+              permite_cobro_al_reconectar: true,
+              moneda_cobro: 'USD'
             })
           })
         })
@@ -126,7 +284,7 @@ describe('SincronizacionOfflineService (Protocolo v3 y Resiliencia Offline)', ()
         modalidad: 'RECOJO',
         lineas: [{ variante_id: 'v-1', cantidad: 1 }],
         autorizacion_cobro: {
-          consentimiento: true,
+          consentimiento_id: 'cons-123',
           preparacion_pago_id: 'prep-123'
         }
       },

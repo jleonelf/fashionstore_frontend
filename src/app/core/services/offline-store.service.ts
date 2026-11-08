@@ -120,25 +120,22 @@ export interface OperacionDatosReserva {
 }
 
 export interface AutorizacionCobroOfflineDTO {
-  consentimiento?: boolean;
-  metodo_preparado_id?: string;
-  huella_dispositivo?: string;
-  // Campos formales Protocolo v3 (operacion.schema.json / schemas_sincronizacion.py)
-  consentimiento_id?: string;
-  aceptado_local_en?: string;
-  huella_compra?: string;
-  base_bob?: string;
-  descuento_bob?: string;
-  envio_bob?: string;
-  total_bob?: string;
-  moneda_cobro?: 'USD';
-  importe_cobro?: string;
-  tasa_id?: string;
-  tasa_bob_por_usd?: string;
-  condiciones_version?: string;
-  vigente_hasta?: string;
-  preparacion_pago_id?: string;
-  permite_cobro_al_reconectar?: boolean;
+  // Exactamente 15 campos contractuales del Protocolo v3 (operacion.schema.json / schemas_sincronizacion.py)
+  consentimiento_id: string;
+  aceptado_local_en: string;
+  huella_compra: string;
+  base_bob: string;
+  descuento_bob: string;
+  envio_bob: string;
+  total_bob: string;
+  moneda_cobro: 'USD';
+  importe_cobro: string;
+  tasa_id: string;
+  tasa_bob_por_usd: string;
+  condiciones_version: string;
+  vigente_hasta: string;
+  preparacion_pago_id: string;
+  permite_cobro_al_reconectar: boolean;
 }
 
 export interface OperacionDatosCompra {
@@ -148,7 +145,7 @@ export interface OperacionDatosCompra {
   lineas: (OperacionLinea | OperacionLineaCompra)[];
   direccion?: string;
   anillo_destino?: number;
-  autorizacion_cobro?: AutorizacionCobroOfflineDTO;
+  autorizacion_cobro?: Partial<AutorizacionCobroOfflineDTO>;
 }
 
 export type TipoOperacionOffline = 'SOLICITAR_RESERVA' | 'SOLICITAR_COMPRA';

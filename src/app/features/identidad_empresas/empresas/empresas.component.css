@@ -41,6 +41,75 @@
   max-width: 60ch;
 }
 
+.platform-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .75rem;
+  margin-bottom: 1.25rem;
+}
+
+.platform-summary article {
+  min-width: 0;
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.platform-summary span {
+  display: block;
+  color: var(--text-muted);
+  font-size: .82rem;
+  line-height: 1.35;
+}
+
+.platform-summary strong {
+  display: block;
+  margin-top: .4rem;
+  color: var(--ink);
+  font-family: 'Fraunces', serif;
+  font-size: 1.8rem;
+}
+
+@media (min-width: 768px) {
+  .platform-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+.plan-note,
+.platform-plan-form p,
+.platform-branches p {
+  color: var(--text-muted);
+  font-size: .85rem;
+  line-height: 1.5;
+}
+
+.platform-branches,
+.platform-plan-form {
+  margin-top: 1.25rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--border);
+}
+
+.platform-branches h4,
+.platform-plan-form h4 {
+  margin: 0 0 .8rem;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.platform-branches ul { list-style: none; margin: 0; padding: 0; }
+.platform-branches li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; padding: .55rem 0; border-bottom: 1px solid var(--border); }
+.platform-branches li span { color: var(--text-muted); font-size: .85rem; }
+.platform-plan-form label { display: block; margin: .7rem 0 .25rem; font-weight: 600; font-size: .85rem; }
+.platform-plan-form input,
+.platform-plan-form select,
+.form-group select { width: 100%; min-width: 0; min-height: 44px; padding: .65rem .85rem; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--ink); font: inherit; }
+.platform-plan-form button { margin-top: .9rem; min-height: 44px; }
+.plan-confirmacion { margin-top: .8rem; padding: .85rem; border: 1px solid var(--warning-border); border-radius: var(--radius-control); background: var(--warning-bg); }
+.plan-confirmacion p { margin: 0; color: var(--ink); }
+.plan-confirmacion button + button { margin-left: .5rem; }
+
 .module-grid {
   display: grid;
   grid-template-columns: 1fr;
