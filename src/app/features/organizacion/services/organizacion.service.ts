@@ -121,6 +121,6 @@ export class OrganizacionService {
    * Obtener tasa de cambio BOB/USD vigente (CU12)
    */
   obtenerTasaVigente(): Observable<{ id: string; tasa_bob_por_usd: number | string; vigente_desde?: string }> {
-    return this.http.get<{ id: string; tasa_bob_por_usd: number | string; vigente_desde?: string }>(`${this.apiUrl}/tasas-cambio/vigente`);
+    return this.http.get<{ id: string; tasa_bob_por_usd: number | string; vigente_desde?: string }>(`${this.apiUrl}/plataforma/tasas-cambio/vigente`);
   }
 }

@@ -15,6 +15,12 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AuthService } from '../../features/identidad_empresas/services/auth.service';
 import { CarritoService } from '../../features/ventas_pagos/services/carrito.service';
 import { ClientePerfil } from '../../features/identidad_empresas/models/auth.models';
+import { SwUpdate } from '@angular/service-worker';
+
+interface InstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
 
 @Component({
   selector: 'app-shell',
@@ -32,8 +38,14 @@ export class ShellComponent implements OnInit {
   menuAbierto = false;
   conteoCarrito = 0;
   dropdownActivo: string | null = null;
+  sinConexion = false;
+  enCatalogo = false;
+  actualizacionLista = false;
+  instalacionDisponible = false;
+  private installPrompt: InstallPromptEvent | null = null;
 
   private readonly destroyRef = inject(DestroyRef);
+  private readonly swUpdate = inject(SwUpdate, { optional: true });
 
   constructor(
     public authService: AuthService,
@@ -44,6 +56,13 @@ export class ShellComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
+    this.sinConexion = typeof navigator !== 'undefined' && !navigator.onLine;
+    this.enCatalogo = this.router.url.startsWith('/catalogo');
+    if (this.swUpdate?.isEnabled) {
+      this.swUpdate.versionUpdates.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((event) => {
+        if (event.type === 'VERSION_READY') this.actualizacionLista = true;
+      });
+    }
     this.authService.usuario$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((u) => {
       this.usuarioActual = u;
       if (u?.rol === 'CLIENTE') {
@@ -59,10 +78,49 @@ export class ShellComponent implements OnInit {
       filter((event) => event instanceof NavigationEnd),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(() => {
+      this.enCatalogo = this.router.url.startsWith('/catalogo');
       this.cerrarMenu(false);
       this.cerrarDropdowns();
     });
   }
+
+  @HostListener('window:beforeinstallprompt', ['$event'])
+  alOfrecerInstalacion(event: Event): void {
+    event.preventDefault();
+    this.installPrompt = event as InstallPromptEvent;
+    this.instalacionDisponible = true;
+  }
+
+  @HostListener('window:appinstalled')
+  alInstalar(): void {
+    this.installPrompt = null;
+    this.instalacionDisponible = false;
+  }
+
+  @HostListener('window:offline')
+  alDesconectar(): void {
+    this.cerrarMenu(false);
+    this.sinConexion = true;
+  }
+
+  @HostListener('window:online')
+  alReconectar(): void {
+    this.sinConexion = false;
+    if (this.swUpdate?.isEnabled) {
+      void this.swUpdate.checkForUpdate().catch(() => undefined);
+    }
+  }
+
+  async instalarAplicacion(): Promise<void> {
+    const prompt = this.installPrompt;
+    if (!prompt) return;
+    this.installPrompt = null;
+    this.instalacionDisponible = false;
+    await prompt.prompt();
+    await prompt.userChoice;
+  }
+
+  recargarVersion(): void { window.location.reload(); }
 
   alternarMenu(): void {
     this.menuAbierto ? this.cerrarMenu() : this.abrirMenu();

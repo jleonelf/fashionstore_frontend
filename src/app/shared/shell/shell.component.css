@@ -61,3 +61,8 @@
 @media(max-width:900px){.app-header{height:60px;padding-inline:.85rem;gap:.6rem}.nav-links,.desktop-only{display:none!important}.hamburger-btn{display:flex;flex:0 0 44px;width:44px;height:44px}.main-content{padding-top:.75rem}.cart-btn{min-height:44px}.btn-close-drawer{width:44px;height:44px}.btn-drawer-logout{min-height:44px}}
 @media(max-width:420px){.mobile-drawer{width:100vw}.brand{font-size:1.02rem}}
 @media(prefers-reduced-motion:reduce){.mobile-drawer,.mobile-backdrop,.hamburger-bar{transition:none}}
+.pwa-notice{display:flex;align-items:center;justify-content:center;gap:1rem;flex-wrap:wrap;padding:.75rem 1rem;background:var(--brass-soft);color:var(--ink);font-size:.88rem;font-weight:600;text-align:center}
+.pwa-notice button{min-height:44px;padding:.55rem 1rem;border:0;border-radius:var(--radius-pill);background:var(--ink);color:var(--surface);font-weight:700;cursor:pointer}
+.pwa-offline{max-width:38rem;margin:4rem auto;padding:2rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);box-shadow:var(--shadow-card)}
+.pwa-offline h1{color:var(--ink);font-family:Fraunces,Georgia,serif}
+.pwa-offline a{display:inline-flex;align-items:center;min-height:44px;padding:.65rem 1rem;border-radius:var(--radius-pill);background:var(--ink);color:var(--surface);font-weight:700;text-decoration:none}

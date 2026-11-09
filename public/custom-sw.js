@@ -1,12 +1,5 @@
-// Service Worker para Notificaciones Web Push de FashionStore PWA
-
-self.addEventListener('install', (event) => {
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
-});
+// Unico registro del origen: caché/versiones Angular y Web Push existente.
+importScripts('./ngsw-worker.js');
 
 self.addEventListener('push', (event) => {
   let payload = {};
@@ -21,8 +14,8 @@ self.addEventListener('push', (event) => {
   const title = payload.title || 'FashionStore';
   const options = {
     body: payload.body || 'Tienes una nueva notificación de tu compra o pedido.',
-    icon: payload.icon || '/assets/icons/icon-192x192.png',
-    badge: payload.badge || '/assets/icons/badge-72x72.png',
+    icon: payload.icon || '/icons/icon-192.png',
+    badge: payload.badge || '/icons/icon-192.png',
     data: payload.data || { url: '/' },
     tag: payload.tag || 'fashionstore-notificacion',
     renotify: true

@@ -78,6 +78,29 @@ Los artefactos compilados se generarán en el directorio `dist/fashionstore-web/
 
 ---
 
+## PWA instalable y Render
+
+El build de producción publica los archivos de `dist/fashionstore-web/browser/`,
+incluidos `manifest.webmanifest`, los iconos, `custom-sw.js`, `ngsw-worker.js`
+y `ngsw.json`. `custom-sw.js` es el único worker registrado: conserva Web Push
+e importa el worker de Angular para cachear solo archivos estáticos de la app.
+El API y los pagos quedan fuera del caché del service worker.
+
+En Render Static Site usa `npm ci && npm run build`, publica
+`dist/fashionstore-web/browser` y configura una reescritura `/*` a
+`/index.html` para las rutas Angular. Comprueba que el manifest, los iconos
+y ambos scripts del worker responden como archivos reales. La instalación
+requiere HTTPS. No hay variables Firebase en este frontend: Web Push obtiene
+la clave pública VAPID del backend.
+
+Para consultar prendas sin conexión, un cliente debe iniciar sesión y usar
+«Descargar catálogo local» mientras tiene internet. Esa descarga prepara además
+la referencia horaria necesaria para guardar solicitudes offline durante su
+vigencia. Desde el catálogo guardado puede crear una solicitud de pedido para
+recojo; se guarda en IndexedDB con UUID estable y se envía al reconectar.
+El pedido no queda confirmado ni pagado hasta que el servidor valide stock,
+precio y condiciones. Las imágenes externas pueden requerir conexión.
+
 ## Despliegue en Vercel
 
 El proyecto incluye el archivo de configuración `vercel.json` listo para despliegues continuos en Vercel:

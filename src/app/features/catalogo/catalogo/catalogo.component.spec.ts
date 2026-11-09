@@ -52,10 +52,12 @@ describe('CatalogoComponent (Roles, Asistente IA y Accesibilidad de Modal)', () 
     authServiceSpy = jasmine.createSpyObj<AuthService>('AuthService', [
       'obtenerUsuarioActual',
       'estaAutenticado',
+      'esVentanaPrivacidadValida',
       'obtenerEmpresaId',
       'obtenerEmpresaCodigo'
     ]);
     authServiceSpy.obtenerEmpresaId.and.returnValue('00000000-0000-4000-8000-000000000001');
+    authServiceSpy.esVentanaPrivacidadValida.and.returnValue(true);
     authServiceSpy.obtenerEmpresaCodigo.and.returnValue('fashionstore');
     iaServiceSpy = jasmine.createSpyObj<IAService>('IAService', ['buscar', 'recomendaciones']);
 
@@ -85,6 +87,31 @@ describe('CatalogoComponent (Roles, Asistente IA y Accesibilidad de Modal)', () 
 
   afterEach(() => {
     document.body.classList.remove('modal-open');
+  });
+
+  it('guarda un pedido local para recojo sin autorizar cobro ni confirmarlo', async () => {
+    authServiceSpy.obtenerUsuarioActual.and.returnValue({ id: 'u-1', rol: 'CLIENTE' } as any);
+    fixture = TestBed.createComponent(CatalogoComponent);
+    component = fixture.componentInstance;
+    component.esModoCopiaLocal = true;
+    component.varianteSeleccionada = { id: 'v-1' } as any;
+    component.cantidadAgregar = 2;
+    component.snapshotLocal = {
+      empresa_id: 'empresa-1', valido: true,
+      sucursales: [{ id: 's-1', nombre: 'Centro' }],
+      productos: [{ variantes: [{ id: 'v-1', precio_bob: '80.00', disponibilidad: 3, disponibilidad_por_sucursal: [{ sucursal_id: 's-1', disponible_conocido: 3 }] }] }]
+    } as any;
+    const registrar = spyOn(component.syncOfflineService, 'registrarCompraOffline').and.resolveTo({} as any);
+    spyOn(component.syncOfflineService, 'listarComprasLocales').and.resolveTo([]);
+
+    await component.guardarCompraFueraDeLinea();
+
+    expect(registrar).toHaveBeenCalledWith({
+      sucursal_id: 's-1', modalidad: 'RECOJO',
+      lineas: [{ variante_id: 'v-1', cantidad: 2, precio_visto_bob: '80.00' }]
+    });
+    expect(component.mensajeCompraOffline).toContain('pendientes de confirmación');
+    expect(component.guardandoCompraOffline).toBeFalse();
   });
 
   describe('Permisos y visualización por rol', () => {
