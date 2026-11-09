@@ -25,6 +25,7 @@
       <!-- Pendiente: formulario Stripe Elements -->
       <div *ngIf="esPendiente" class="stripe-section">
         <p class="stripe-info">Introduce los datos de tu tarjeta de prueba</p>
+        <p class="stripe-info" *ngIf="intencion">Stripe cobrará {{ intencion.monto | currency:'USD':'symbol':'1.2-2' }} USD en modo prueba.</p>
         <div id="stripe-card-element" class="stripe-element-container"></div>
 
         <!-- Alerta de 3DS / Acción Requerida -->
@@ -62,7 +63,7 @@
           type="button"
           class="cycle-primary btn-pagar"
           (click)="confirmarPago()"
-          [disabled]="procesandoPago || creandoIntencion"
+          [disabled]="procesandoPago || creandoIntencion || !intencion?.client_secret"
         >
           {{ procesandoPago ? 'Procesando pago seguro…' : (creandoIntencion ? 'Iniciando pasarela…' : 'Pagar ' + bs(estado.monto)) }}
         </button>

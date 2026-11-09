@@ -1,4 +1,4 @@
-<header class="app-header" [class.menu-activo]="menuAbierto">
+<header *ngIf="!sinConexion" class="app-header" [class.menu-activo]="menuAbierto">
   <a routerLink="/" class="brand" aria-label="FashionStore inicio" (click)="cerrarMenu()">
     <span class="brand-mark" aria-hidden="true"></span>
     <span>FashionStore</span>
@@ -162,7 +162,7 @@
   aria-hidden="true"
 ></div>
 
-<aside
+<aside *ngIf="!sinConexion"
   #mobileDrawer
   id="mobile-navigation"
   class="mobile-drawer"
@@ -280,6 +280,19 @@
   </div>
 </aside>
 
+<div class="pwa-notice" *ngIf="actualizacionLista && !sinConexion" role="status">
+  <span>Hay una nueva versión disponible. Guarda tus cambios antes de actualizar.</span>
+  <button type="button" (click)="recargarVersion()">Actualizar ahora</button>
+</div>
+<div class="pwa-notice" *ngIf="instalacionDisponible && !sinConexion" role="status">
+  <span>Instala FashionStore para abrirlo desde tu dispositivo.</span>
+  <button type="button" (click)="instalarAplicacion()">Instalar</button>
+</div>
 <main class="main-content">
-  <router-outlet></router-outlet>
+  <section *ngIf="sinConexion && !enCatalogo" class="pwa-offline" role="status">
+    <h1>Sin conexión</h1>
+    <p>Puedes consultar el catálogo descargado y guardar una solicitud de pedido en este dispositivo. El stock, el precio y el pago se verificarán al reconectar.</p>
+    <a routerLink="/catalogo">Ver catálogo guardado</a>
+  </section>
+  <router-outlet *ngIf="!sinConexion || enCatalogo"></router-outlet>
 </main>

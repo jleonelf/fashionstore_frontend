@@ -55,6 +55,19 @@ describe('ShellComponent (Navegación y Acceso por Roles)', () => {
     expect(component).toBeTruthy();
   });
 
+  it('permite abrir el catálogo guardado sin mostrar la navegación privada cuando no hay red', () => {
+    component.sinConexion = true;
+    component.enCatalogo = false;
+    fixture.detectChanges();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('.app-header')).toBeNull();
+    expect(root.querySelector('.pwa-offline a')?.getAttribute('href')).toBe('/catalogo');
+
+    component.enCatalogo = true;
+    fixture.detectChanges();
+    expect(root.querySelector('router-outlet')).not.toBeNull();
+  });
+
   describe('Navegación para VISITANTE (No autenticado)', () => {
     beforeEach(() => {
       usuarioSubject.next(null);

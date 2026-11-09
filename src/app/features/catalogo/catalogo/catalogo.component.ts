@@ -10,7 +10,7 @@ import { CarritoService } from '../../ventas_pagos/services/carrito.service';
 import { AuthService } from '../../identidad_empresas/services/auth.service';
 import { IAService } from '../../experiencia_cliente/services/ia.service';
 import { SincronizacionOfflineService } from '../../../core/services/sincronizacion-offline.service';
-import { OfflineStoreService, CatalogoSnapshot } from '../../../core/services/offline-store.service';
+import { OfflineStoreService, CatalogoSnapshot, OperacionEncolada } from '../../../core/services/offline-store.service';
 import { formatearErrorApi } from '../../../core/utils/error-handler.util';
 import {
   bloquearScrollBody,
@@ -87,6 +87,10 @@ export class CatalogoComponent implements OnInit, OnDestroy {
   guardandoReservaOffline = false;
   mensajeReservaOffline: string | null = null;
   errorReservaOffline: string | null = null;
+  guardandoCompraOffline = false;
+  mensajeCompraOffline: string | null = null;
+  errorCompraOffline: string | null = null;
+  comprasLocales: OperacionEncolada[] = [];
 
   // Disponibilidad por sucursal
   disponibilidad: DisponibilidadItem[] = [];
@@ -122,8 +126,9 @@ export class CatalogoComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    this.cargarMaestros();
+    if (this.syncOfflineService.estaEnLinea) this.cargarMaestros();
     this.cargarMetadataSnapshotLocal();
+    void this.cargarComprasLocales();
 
     // Monitorear estado de red
     this.syncOfflineService.enLinea$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(enLinea => {
@@ -171,7 +176,7 @@ export class CatalogoComponent implements OnInit, OnDestroy {
   }
 
   esCliente(): boolean {
-    return this.authService.obtenerUsuarioActual()?.rol === 'CLIENTE';
+    return this.authService.esVentanaPrivacidadValida() && this.authService.obtenerUsuarioActual()?.rol === 'CLIENTE';
   }
 
   esPersonalInterno(): boolean {
@@ -315,6 +320,13 @@ export class CatalogoComponent implements OnInit, OnDestroy {
         this.descargandoCopia = false;
         this.snapshotLocal = snapshotGuardado;
         this.sinCopiaLocal = false;
+        if (this.esCliente()) {
+          this.syncOfflineService.obtenerReferenciaHoraria().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            error: () => {
+              this.errorDescarga = 'El catálogo está guardado, pero no se pudo preparar la hora de referencia para pedidos sin conexión. Vuelve a intentarlo mientras tengas internet.';
+            }
+          });
+        }
         this.mensajeDescarga = `Catálogo guardado localmente (Versión ${snapshotGuardado.catalogo_version}, ${snapshotGuardado.total_productos} prendas).`;
         if (this.esModoCopiaLocal) {
           this.filtrarLocalmente();
@@ -407,6 +419,11 @@ export class CatalogoComponent implements OnInit, OnDestroy {
       : 'https://images.unsplash.com/photo-1523381210434-271e8be1f52b?w=600&auto=format&fit=crop&q=60';
   }
 
+  usarImagenLocal(event: Event): void {
+    const imagen = event.target as HTMLImageElement;
+    if (!imagen.src.endsWith('/icons/icon-192.png')) imagen.src = '/icons/icon-192.png';
+  }
+
   fechaFormateada(fechaIso?: string): string {
     return formatearFechaBolivia(fechaIso);
   }
@@ -427,6 +444,8 @@ export class CatalogoComponent implements OnInit, OnDestroy {
     this.mensajeCarritoError = null;
     this.mensajeReservaOffline = null;
     this.errorReservaOffline = null;
+    this.mensajeCompraOffline = null;
+    this.errorCompraOffline = null;
     this.cargandoVariantes = true;
 
     if (!this.modalAbierto) {
@@ -471,6 +490,8 @@ export class CatalogoComponent implements OnInit, OnDestroy {
     this.mensajeCarritoError = null;
     this.mensajeReservaOffline = null;
     this.errorReservaOffline = null;
+    this.mensajeCompraOffline = null;
+    this.errorCompraOffline = null;
     if (this.modalAbierto) {
       desbloquearScrollBody();
       this.modalAbierto = false;
@@ -486,6 +507,8 @@ export class CatalogoComponent implements OnInit, OnDestroy {
     this.mensajeCarritoError = null;
     this.mensajeReservaOffline = null;
     this.errorReservaOffline = null;
+    this.mensajeCompraOffline = null;
+    this.errorCompraOffline = null;
 
     // Si es copia local, mostrar disponibilidad conocida
     if (this.productoSeleccionado?.es_copia_local) {
@@ -555,6 +578,53 @@ export class CatalogoComponent implements OnInit, OnDestroy {
   // ==========================================
   // RESERVA FUERA DE LÍNEA DESDE MODAL (reserva offline)
   // ==========================================
+
+  async cargarComprasLocales(): Promise<void> {
+    if (!this.esCliente()) {
+      this.comprasLocales = [];
+      return;
+    }
+    try {
+      this.comprasLocales = await this.syncOfflineService.listarComprasLocales();
+    } catch {
+      this.comprasLocales = [];
+    }
+  }
+
+  async guardarCompraFueraDeLinea(): Promise<void> {
+    if (this.guardandoCompraOffline || !this.esCliente() || !this.esModoCopiaLocal || !this.varianteSeleccionada || !this.snapshotLocal) return;
+    const cantidad = Number(this.cantidadAgregar);
+    const variante = this.snapshotLocal.productos.flatMap(p => p.variantes).find(v => v.id === this.varianteSeleccionada!.id);
+    this.mensajeCompraOffline = null;
+    this.errorCompraOffline = null;
+    const disponibleConocido = variante?.disponibilidad ?? variante?.disponibilidad_por_sucursal?.reduce((total, s) => total + s.disponible_conocido, 0) ?? 0;
+    if (!variante || !Number.isInteger(cantidad) || cantidad < 1 || cantidad > disponibleConocido) {
+      this.errorCompraOffline = 'Elige una cantidad entera dentro de la disponibilidad conocida del catálogo descargado.';
+      return;
+    }
+    const porSucursal = variante.disponibilidad_por_sucursal ?? [];
+    const sucursalId = porSucursal.length
+      ? porSucursal.find(s => s.disponible_conocido >= cantidad)?.sucursal_id
+      : this.snapshotLocal.sucursales[0]?.id;
+    if (!sucursalId) {
+      this.errorCompraOffline = 'La copia descargada no tiene una sucursal de origen para este pedido.';
+      return;
+    }
+    this.guardandoCompraOffline = true;
+    try {
+      await this.syncOfflineService.registrarCompraOffline({
+        sucursal_id: sucursalId,
+        modalidad: 'RECOJO',
+        lineas: [{ variante_id: variante.id, cantidad, precio_visto_bob: variante.precio_bob }]
+      });
+      await this.cargarComprasLocales();
+      this.mensajeCompraOffline = 'Solicitud de pedido guardada en este dispositivo. Se enviará al reconectar; stock, precio y pago quedan pendientes de confirmación.';
+    } catch (err: any) {
+      this.errorCompraOffline = err?.message || 'No se pudo guardar la solicitud de pedido en este dispositivo.';
+    } finally {
+      this.guardandoCompraOffline = false;
+    }
+  }
 
   async guardarReservaFueraDeLinea(): Promise<void> {
     if (!this.varianteSeleccionada || !this.productoSeleccionado) return;

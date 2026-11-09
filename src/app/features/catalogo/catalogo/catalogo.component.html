@@ -46,6 +46,19 @@
     </div>
   </section>
 
+  <section *ngIf="esCliente() && comprasLocales.length" class="offline-bar card" aria-label="Solicitudes de pedido guardadas en este dispositivo">
+    <div class="offline-bar-info">
+      <strong>Pedidos guardados en este dispositivo</strong>
+      <p class="offline-desc">Se enviarán al reconectar. El servidor confirmará stock, precio y pago antes de completar cada compra.</p>
+      <ul>
+        <li *ngFor="let compra of comprasLocales">
+          {{ fechaFormateada(compra.creada_local_en) }} ·
+          {{ compra.estado_envio === 'PENDIENTE_ENVIO' ? 'Pendiente de envío' : compra.estado_envio === 'SINCRONIZADA' ? 'Recibido por el servidor' : 'Requiere revisión' }}
+        </li>
+      </ul>
+    </div>
+  </section>
+
   <!-- Mensajes de feedback de descarga -->
   <div *ngIf="mensajeDescarga" class="alert success" role="status">
     {{ mensajeDescarga }}
@@ -270,7 +283,7 @@
           (keydown.enter)="abrirDetalle(p, $event)"
         >
           <div class="img-wrap">
-            <img [src]="imagen(p)" [alt]="p.nombre" loading="lazy" />
+            <img [src]="imagen(p)" [alt]="p.nombre" loading="lazy" (error)="usarImagenLocal($event)" />
             <span class="price">Bs {{ p.precio_base }}</span>
             <span class="stock" [class.on]="p.activo">{{ p.activo ? 'Disponible' : 'No disponible' }}</span>
             <div class="hover-bar">
@@ -327,7 +340,7 @@
         <!-- Columna galería -->
         <div class="modal-gallery">
           <div class="modal-main-img">
-            <img [src]="imagenActiva || imagen(productoSeleccionado)" [alt]="productoSeleccionado.nombre" />
+            <img [src]="imagenActiva || imagen(productoSeleccionado)" [alt]="productoSeleccionado.nombre" (error)="usarImagenLocal($event)" />
           </div>
           <div class="modal-thumbs" *ngIf="productoSeleccionado.imagenes && productoSeleccionado.imagenes.length > 1">
             <button
@@ -337,7 +350,7 @@
               [class.active]="imagenActiva === img.enlace_imagen"
               (click)="imagenActiva = img.enlace_imagen"
             >
-              <img [src]="img.enlace_imagen" [alt]="img.texto_alternativo || productoSeleccionado.nombre" />
+              <img [src]="img.enlace_imagen" [alt]="img.texto_alternativo || productoSeleccionado.nombre" (error)="usarImagenLocal($event)" />
             </button>
           </div>
         </div>
@@ -438,6 +451,9 @@
               {{ errorReservaOffline }}
             </div>
 
+            <div *ngIf="mensajeCompraOffline" class="alert success" role="status">{{ mensajeCompraOffline }}</div>
+            <div *ngIf="errorCompraOffline" class="alert err" role="alert">{{ errorCompraOffline }}</div>
+
             <!-- Acciones de compra y reserva -->
             <div class="compra-acciones">
               <!-- En línea: agregar al carrito normal -->
@@ -463,7 +479,7 @@
 
               <!-- Fuera de línea: Registrar reserva diferida (reserva offline) -->
               <div *ngIf="esCliente() && productoSeleccionado.es_copia_local" class="offline-reserva-action">
-                <label for="cant-modal-off">Cantidad a reservar:</label>
+                <label for="cant-modal-off">Cantidad:</label>
                 <div class="cant-row">
                   <input
                     id="cant-modal-off"
@@ -476,12 +492,20 @@
                     type="button"
                     class="btn-ink"
                     (click)="guardarReservaFueraDeLinea()"
-                    [disabled]="guardandoReservaOffline"
+                    [disabled]="guardandoReservaOffline || guardandoCompraOffline"
                   >
                     {{ guardandoReservaOffline ? 'Guardando…' : 'Guardar reserva fuera de línea' }}
                   </button>
+                  <button
+                    type="button"
+                    class="btn-ink"
+                    (click)="guardarCompraFueraDeLinea()"
+                    [disabled]="guardandoCompraOffline || guardandoReservaOffline"
+                  >
+                    {{ guardandoCompraOffline ? 'Guardando…' : 'Guardar pedido para recojo' }}
+                  </button>
                 </div>
-                <small class="hint">Quedará en espera y se sincronizará automáticamente al conectar.</small>
+                <small class="hint">El pedido no se cobra ni confirma sin conexión. Se verificará al enviarlo.</small>
               </div>
 
               <div *ngIf="esVisitante() && stockDisponibleTotal > 0" class="login-prompt">
